@@ -5,6 +5,7 @@
   // header button or ⌘B/Ctrl+B, never navigation.
   import type { Snippet } from 'svelte';
   import Sidebar from './Sidebar.svelte';
+  import TabBar from './TabBar.svelte';
   import StatusBar from './StatusBar.svelte';
   import CommandPalette from './CommandPalette.svelte';
   import SupportModal from './SupportModal.svelte';
@@ -53,8 +54,13 @@
        (--titlebar-h, app.css). Sits below the z-40/z-50 overlays so they stay usable. -->
   <div data-tauri-drag-region class="absolute inset-x-0 top-0 z-20 h-[var(--titlebar-h)]"></div>
   <Sidebar />
-  <main class="col-start-2 row-start-1 min-h-0 overflow-hidden">
-    {@render children()}
+  <main class="col-start-2 row-start-1 flex min-h-0 flex-col overflow-hidden">
+    <!-- Open sessions sit in a horizontal strip above the content (TabBar hides
+         itself when empty), so the sidebar stays pure navigation. -->
+    <TabBar />
+    <div class="min-h-0 flex-1 overflow-hidden">
+      {@render children()}
+    </div>
   </main>
   <StatusBar />
   <CommandPalette />

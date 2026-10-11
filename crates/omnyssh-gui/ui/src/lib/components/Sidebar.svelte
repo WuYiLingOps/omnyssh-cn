@@ -1,22 +1,18 @@
 <script lang="ts">
   // Left region (tech-gui.md §2): header (logo + collapse), the four entry points
-  // (two selectors that hold a highlight, two spawners that open sessions), the
-  // sessions list, and the footer (palette + theme toggle, §5.1). The active
-  // highlight is the brand's accent inversion, so exactly one filled row — a
-  // selector or a session — is visible at any moment (the §2 invariant, made legible).
+  // (two selectors that hold a highlight, two spawners that open sessions), and the
+  // footer (palette + theme toggle, §5.1). The active highlight is the brand's
+  // accent inversion, so exactly one filled row — a selector — is visible here at
+  // any moment (the §2 invariant, made legible). Open sessions are a top tab strip
+  // above the content (TabBar.svelte), not sidebar rows.
   import Logo from './Logo.svelte';
   import ThemeToggle from './ThemeToggle.svelte';
-  import { Button, Icon, StatusDot, type IconName } from '$lib/theme';
+  import { Button, Icon, type IconName } from '$lib/theme';
+  import { t } from 'svelte-i18n';
   import { activeEntity } from '$lib/stores/activeEntity';
-  import {
-    sessions,
-    sessionLabel,
-    sessionTitle,
-    sessionStatusDot,
-    type SessionKind
-  } from '$lib/stores/sessions';
+  import { type SessionKind } from '$lib/stores/sessions';
   import { sidebarCollapsed } from '$lib/stores/ui';
-  import { spawnSession, closeSession } from '$lib/stores/navigation';
+  import { spawnSession } from '$lib/stores/navigation';
   import { palette } from '$lib/stores/palette';
   import { support } from '$lib/stores/support';
 
@@ -27,16 +23,18 @@
     if (host) spawnSession(kind, host.name);
   }
 
+  // Entry-point labels are message keys, resolved through `$t` at render: a plain
+  // string captured here would freeze the label at the language the app booted in.
   type Selector = { kind: 'dashboard' | 'snippets'; label: string; icon: IconName };
   type Spawner = { kind: SessionKind; label: string; icon: IconName };
 
   const selectors: Selector[] = [
-    { kind: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
-    { kind: 'snippets', label: 'Snippets', icon: 'snippets' }
+    { kind: 'dashboard', label: 'sidebar.dashboard', icon: 'dashboard' },
+    { kind: 'snippets', label: 'sidebar.snippets', icon: 'snippets' }
   ];
   const spawners: Spawner[] = [
-    { kind: 'sftp', label: 'SFTP', icon: 'sftp' },
-    { kind: 'terminal', label: 'Terminal', icon: 'terminal' }
+    { kind: 'sftp', label: 'sidebar.sftp', icon: 'sftp' },
+    { kind: 'terminal', label: 'sidebar.terminal', icon: 'terminal' }
   ];
 
   const rowBase = 'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition';
@@ -55,18 +53,18 @@
   >
     {#if !$sidebarCollapsed}
       <Logo size={22} />
-      <span class="flex-1 truncate text-sm font-bold tracking-wide">OmnySSH</span>
+      <span class="flex-1 truncate text-sm font-bold tracking-wide">{$t('app.name')}</span>
     {/if}
     <Button
       variant="icon"
-      title={$sidebarCollapsed ? 'Expand sidebar (⌘B)' : 'Collapse sidebar (⌘B)'}
+      title={$sidebarCollapsed ? $t('sidebar.expand') : $t('sidebar.collapse')}
       onclick={() => sidebarCollapsed.toggle()}
     >
       <Icon name={$sidebarCollapsed ? 'expand' : 'collapse'} />
     </Button>
   </header>
 
-  <!-- Entry points stay pinned; only the sessions list scrolls (tech-gui.md §2). -->
+  <!-- Entry points stay pinned; the sidebar holds no scrollable list any more. -->
   <nav class="flex min-h-0 flex-1 flex-col px-2 py-2">
     <ul class="shrink-0 space-y-1">
       {#each selectors as sel (sel.kind)}
@@ -76,13 +74,13 @@
             class="{rowBase} {focusRing} {rowState($activeEntity.kind === sel.kind)} {$sidebarCollapsed
               ? 'justify-center'
               : ''}"
-            title={sel.label}
+            title={$t(sel.label)}
             aria-current={$activeEntity.kind === sel.kind ? 'page' : undefined}
             onclick={() =>
               sel.kind === 'dashboard' ? activeEntity.selectDashboard() : activeEntity.selectSnippets()}
           >
             <Icon name={sel.icon} />
-            {#if !$sidebarCollapsed}<span class="truncate">{sel.label}</span>{/if}
+            {#if !$sidebarCollapsed}<span class="truncate">{$t(sel.label)}</span>{/if}
           </button>
         </li>
       {/each}
@@ -91,63 +89,15 @@
           <button
             type="button"
             class="{rowBase} {focusRing} {rowState(false)} {$sidebarCollapsed ? 'justify-center' : ''}"
-            title={sp.label}
+            title={$t(sp.label)}
             onclick={() => pickAndSpawn(sp.kind)}
           >
             <Icon name={sp.icon} />
-            {#if !$sidebarCollapsed}<span class="truncate">{sp.label}</span>{/if}
+            {#if !$sidebarCollapsed}<span class="truncate">{$t(sp.label)}</span>{/if}
           </button>
         </li>
       {/each}
     </ul>
-
-    {#if $sessions.length > 0}
-      <ul class="mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto border-t border-default pt-2">
-        {#each $sessions as s (s.id)}
-          {@const active = $activeEntity.kind === 'session' && $activeEntity.id === s.id}
-          <li>
-            <div
-              class="{rowBase} {rowState(active)} {$sidebarCollapsed ? 'justify-center' : 'pr-1'}"
-            >
-              <button
-                type="button"
-                class="flex min-w-0 items-center gap-2.5 rounded text-left {focusRing} {$sidebarCollapsed
-                  ? ''
-                  : 'flex-1'}"
-                title={sessionTitle(s)}
-                aria-label={sessionTitle(s)}
-                aria-current={active ? 'true' : undefined}
-                onclick={() => activeEntity.activateSession(s.id)}
-              >
-                {#if $sidebarCollapsed}
-                  <span class="relative inline-flex shrink-0">
-                    <Icon name={s.kind} />
-                    <span class="absolute -right-1 -top-1">
-                      <StatusDot status={sessionStatusDot[s.status]} size={7} />
-                    </span>
-                  </span>
-                {:else}
-                  <StatusDot status={sessionStatusDot[s.status]} />
-                  <Icon name={s.kind} size={16} />
-                  <span class="min-w-0 flex-1 truncate">{sessionLabel(s)}</span>
-                {/if}
-              </button>
-              {#if !$sidebarCollapsed}
-                <button
-                  type="button"
-                  class="shrink-0 rounded p-1 opacity-60 transition hover:opacity-100 {focusRing}"
-                  title="Close {sessionLabel(s)}"
-                  aria-label="Close {sessionLabel(s)}"
-                  onclick={() => closeSession(s.id)}
-                >
-                  <Icon name="close" size={14} />
-                </button>
-              {/if}
-            </div>
-          </li>
-        {/each}
-      </ul>
-    {/if}
   </nav>
 
   <footer
@@ -155,14 +105,14 @@
       ? 'flex flex-col items-center gap-1'
       : 'flex items-center gap-1'}"
   >
-    <Button variant="icon" title="Command palette (⌘K)" onclick={() => palette.open()}>
+    <Button variant="icon" title={$t('sidebar.commandPalette')} onclick={() => palette.open()}>
       <Icon name="command" />
     </Button>
     <ThemeToggle />
     <!-- Support/about overlay: free + open-source note and the two ways to help.
          Opens a modal, not a screen, so it holds no highlight and never becomes the
          active entity (§2). Sits left of the gear, icon-only so it survives collapse. -->
-    <Button variant="icon" title="Support OmnySSH" onclick={() => support.open()}>
+    <Button variant="icon" title={$t('sidebar.support')} onclick={() => support.open()}>
       <Icon name="telegram" />
     </Button>
     <!-- Settings is a selector-like screen; the gear holds the active highlight like
@@ -173,8 +123,8 @@
       'settings'
         ? 'bg-accent text-accent-fg'
         : 'text-muted hover:bg-surface-inset hover:text-fg'}"
-      title="Settings"
-      aria-label="Settings"
+      title={$t('sidebar.settings')}
+      aria-label={$t('sidebar.settings')}
       aria-current={$activeEntity.kind === 'settings' ? 'page' : undefined}
       onclick={() => activeEntity.selectSettings()}
     >
