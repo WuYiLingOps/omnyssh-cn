@@ -4,9 +4,12 @@
   // and the update preferences (`check_on_startup`) + a manual update check. Update prefs
   // persist to the shared config via `save_update_config`; the rest are frontend prefs.
   import { onMount } from 'svelte';
+  import { t } from 'svelte-i18n';
   import type { UpdateConfigDto } from '$lib/bindings';
   import { Surface, Icon } from '$lib/theme';
   import { theme } from '$lib/stores/theme';
+  import { locale, type LanguageCode } from '$lib/stores/locale';
+  import { LANGUAGE_CODES, LANGUAGE_NAMES } from '$lib/i18n/messages';
   import { streamerMode } from '$lib/stores/streamer';
   import { refreshInterval, REFRESH_OPTIONS } from '$lib/stores/settings';
   import { traySupport, trayBehavior } from '$lib/stores/tray';
@@ -82,16 +85,16 @@
 </script>
 
 <section class="mx-auto min-h-full max-w-2xl p-6">
-  <h1 class="mb-5 text-lg font-semibold tracking-tight">Settings</h1>
+  <h1 class="mb-5 text-lg font-semibold tracking-tight">{$t('settings.title')}</h1>
 
   <div class="space-y-4">
     <!-- Appearance -->
     <Surface class="p-5">
-      <h2 class="mb-3 text-sm font-semibold">Appearance</h2>
+      <h2 class="mb-3 text-sm font-semibold">{$t('settings.appearance')}</h2>
       <div class="flex items-center justify-between gap-4">
         <div>
-          <p class="text-sm">Theme</p>
-          <p class="text-xs text-muted">Mirrors the sidebar toggle.</p>
+          <p class="text-sm">{$t('settings.theme')}</p>
+          <p class="text-xs text-muted">{$t('settings.themeHint')}</p>
         </div>
         <div class="flex gap-1 rounded-xl bg-surface-inset p-1">
           <button
@@ -100,7 +103,7 @@
             aria-pressed={$theme === 'light'}
             onclick={() => theme.set('light')}
           >
-            <span class="flex items-center gap-1.5"><Icon name="sun" size={14} /> Light</span>
+            <span class="flex items-center gap-1.5"><Icon name="sun" size={14} /> {$t('settings.themeLight')}</span>
           </button>
           <button
             type="button"
@@ -108,27 +111,48 @@
             aria-pressed={$theme === 'dark'}
             onclick={() => theme.set('dark')}
           >
-            <span class="flex items-center gap-1.5"><Icon name="moon" size={14} /> Dark</span>
+            <span class="flex items-center gap-1.5"><Icon name="moon" size={14} /> {$t('settings.themeDark')}</span>
           </button>
+        </div>
+      </div>
+      <!-- Language sits next to Theme: both are appearance preferences the whole window
+           follows at once, and switching a language needs to be one click away. The label
+           is each language's own endonym (`简体中文`), which is what a speaker looks for. -->
+      <div class="mt-4 flex items-center justify-between gap-4 border-t border-default pt-4">
+        <div>
+          <p class="text-sm">{$t('settings.language')}</p>
+          <p class="text-xs text-muted">{$t('settings.languageHint')}</p>
+        </div>
+        <div class="flex gap-1 rounded-xl bg-surface-inset p-1">
+          {#each LANGUAGE_CODES as code (code)}
+            <button
+              type="button"
+              class="{seg} {segState($locale === code)}"
+              aria-pressed={$locale === code}
+              onclick={() => locale.set(code as LanguageCode)}
+            >
+              {LANGUAGE_NAMES[code].endonym}
+            </button>
+          {/each}
         </div>
       </div>
     </Surface>
 
     <!-- Privacy -->
     <Surface class="p-5">
-      <h2 class="mb-3 text-sm font-semibold">Privacy</h2>
+      <h2 class="mb-3 text-sm font-semibold">{$t('settings.privacy')}</h2>
       <div class="flex items-center justify-between gap-4">
         <div class="min-w-0">
-          <p class="text-sm">Streamer mode</p>
+          <p class="text-sm">{$t('settings.streamerMode')}</p>
           <p class="text-xs text-muted">
-            Mask host addresses with realistic fakes, so real IPs stay off-screen while recording.
+            {$t('settings.streamerHint')}
           </p>
         </div>
         <button
           type="button"
           role="switch"
           aria-checked={$streamerMode}
-          aria-label="Streamer mode"
+          aria-label={$t('settings.streamerMode')}
           onclick={() => streamerMode.toggle()}
           class="relative h-6 w-11 shrink-0 rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus {$streamerMode
             ? 'bg-accent'
@@ -145,11 +169,11 @@
 
     <!-- Dashboard -->
     <Surface class="p-5">
-      <h2 class="mb-3 text-sm font-semibold">Dashboard</h2>
+      <h2 class="mb-3 text-sm font-semibold">{$t('settings.dashboard')}</h2>
       <div class="flex items-center justify-between gap-4">
         <div>
-          <p class="text-sm">Auto-refresh interval</p>
-          <p class="text-xs text-muted">How often the dashboard forces a metric refresh.</p>
+          <p class="text-sm">{$t('settings.autoRefresh')}</p>
+          <p class="text-xs text-muted">{$t('settings.autoRefreshHint')}</p>
         </div>
         <div class="flex flex-wrap justify-end gap-1 rounded-xl bg-surface-inset p-1">
           {#each REFRESH_OPTIONS as secs (secs)}
@@ -169,40 +193,40 @@
     <!-- Window: the tray keeps sessions and tunnels up with no window on screen. macOS
          has no minimize event to act on, and keeps minimized windows in the Dock. -->
     <Surface class="p-5">
-      <h2 class="mb-3 text-sm font-semibold">Window</h2>
+      <h2 class="mb-3 text-sm font-semibold">{$t('settings.window')}</h2>
       <div class="space-y-4">
         {#if !isMac}
           {@render traySwitch(
-            'Minimize to tray',
+            $t('settings.minimizeToTray'),
             $traySupport.available && !$traySupport.minimize
-              ? 'Not on Wayland, which never tells an app its window was minimized.'
-              : 'Minimizing hides the window; the tray icon brings it back.',
+              ? $t('settings.minimizeWayland')
+              : $t('settings.minimizeHint'),
             $trayBehavior.minimizeToTray && $traySupport.minimize,
             $traySupport.minimize,
             () => trayBehavior.update({ minimizeToTray: !$trayBehavior.minimizeToTray })
           )}
         {/if}
         {@render traySwitch(
-          isMac ? 'Close to the menu bar' : 'Close to tray',
-          'Closing the window keeps OmnySSH running — terminals, transfers and tunnels stay connected. Quit from the icon.',
+          isMac ? $t('settings.closeToMenuBar') : $t('settings.closeToTray'),
+          $t('settings.closeHint'),
           $trayBehavior.closeToTray && $traySupport.available,
           $traySupport.available,
           () => trayBehavior.update({ closeToTray: !$trayBehavior.closeToTray })
         )}
         {#if !$traySupport.available}
           <p class="text-xs text-status-warn">
-            This desktop has no system tray, so the window closes and minimizes as usual.
+            {$t('settings.noTray')}
           </p>
         {:else if $trayBehavior.minimizeToTray || $trayBehavior.closeToTray}
           <!-- Some desktops keep tray icons out of sight (GNOME without the AppIndicator
                extension, an overflow menu); a second launch always finds the window. -->
           <p class="text-xs text-muted">
-            No icon in sight? Opening OmnySSH again brings the window back.
+            {$t('settings.noIconHint')}
           </p>
         {/if}
         {@render traySwitch(
-          'Ask before quitting',
-          'When terminals, transfers, tunnels or snippet runs are still open.',
+          $t('settings.askBeforeQuit'),
+          $t('settings.askBeforeQuitHint'),
           $confirmQuit,
           true,
           () => confirmQuit.toggle()
@@ -212,18 +236,18 @@
 
     <!-- Updates -->
     <Surface class="p-5">
-      <h2 class="mb-3 text-sm font-semibold">Updates</h2>
+      <h2 class="mb-3 text-sm font-semibold">{$t('settings.updates')}</h2>
       <div class="space-y-4">
         <div class="flex items-center justify-between gap-4">
           <div>
-            <p class="text-sm">Check for updates on startup</p>
-            <p class="text-xs text-muted">Look for a newer release when the app launches.</p>
+            <p class="text-sm">{$t('settings.checkOnStartup')}</p>
+            <p class="text-xs text-muted">{$t('settings.checkOnStartupHint')}</p>
           </div>
           <button
             type="button"
             role="switch"
             aria-checked={updateConfig?.checkOnStartup ?? false}
-            aria-label="Check for updates on startup"
+            aria-label={$t('settings.checkOnStartup')}
             disabled={!updateConfig}
             onclick={toggleCheckOnStartup}
             class="relative h-6 w-11 shrink-0 rounded-full transition disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus {updateConfig?.checkOnStartup
@@ -240,13 +264,13 @@
 
         <div class="flex items-center justify-between gap-4 border-t border-default pt-4">
           <div class="min-w-0">
-            <p class="text-sm">Manual check</p>
+            <p class="text-sm">{$t('settings.manualCheck')}</p>
             <p class="text-xs text-muted">
-              {#if check.kind === 'checking'}Checking…
-              {:else if check.kind === 'upToDate'}You're on the latest version.
-              {:else if check.kind === 'available'}Version {check.version} is available.
+              {#if check.kind === 'checking'}{$t('settings.checking')}
+              {:else if check.kind === 'upToDate'}{$t('settings.upToDate')}
+              {:else if check.kind === 'available'}{$t('settings.available', { values: { version: check.version } })}
               {:else if check.kind === 'error'}{check.message}
-              {:else}Check GitHub for a newer release.
+              {:else}{$t('settings.manualCheckHint')}
               {/if}
             </p>
           </div>
@@ -257,7 +281,7 @@
             onclick={checkNow}
           >
             <Icon name="refresh" size={14} />
-            Check now
+            {$t('settings.checkNow')}
           </button>
         </div>
       </div>
@@ -266,9 +290,9 @@
     <!-- About: selectable, so the version can be pasted into a bug report -->
     {#if version}
       <Surface class="p-5">
-        <h2 class="mb-3 text-sm font-semibold">About</h2>
+        <h2 class="mb-3 text-sm font-semibold">{$t('settings.about')}</h2>
         <div class="flex items-center justify-between gap-4">
-          <p class="text-sm">Version</p>
+          <p class="text-sm">{$t('settings.version')}</p>
           <p class="select-text text-sm tabular-nums text-muted">{version}</p>
         </div>
       </Surface>

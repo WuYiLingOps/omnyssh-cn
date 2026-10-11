@@ -37,21 +37,37 @@ function splitCsv(raw: string): string[] {
     .filter(Boolean);
 }
 
-export type FormResult = { ok: true; snippet: SnippetDto } | { ok: false; error: string };
+/** A validation failure as a message key plus the values it interpolates. The module
+ *  stays i18n-free (its tests are pure, no locale setup); the component translates. */
+export interface FormError {
+  key: string;
+  values?: Record<string, string>;
+}
 
-/** Validate + build a `SnippetDto`, or return an error message. Mirrors the TUI's
+export type FormResult = { ok: true; snippet: SnippetDto } | { ok: false; error: FormError };
+
+/** Render a {@link FormError} through a `$t`-style translator. Kept here so both the
+ *  editor and any future caller format a failure the same way. */
+export function formErrorMessage(
+  error: FormError,
+  translate: (key: string, options?: { values?: Record<string, string> }) => string
+): string {
+  return translate(error.key, { values: error.values });
+}
+
+/** Validate + build a `SnippetDto`, or return an error. Mirrors the TUI's
  *  `to_snippet`: name and command are required; host is required when scope is
  *  'host' but kept if provided under 'global'; tags/params are split, trimmed, and
  *  dropped to `undefined` when empty (so the wire form stays sparse, §4.1). */
 export function formToSnippet(f: SnippetFormFields): FormResult {
   const name = f.name.trim();
-  if (!name) return { ok: false, error: 'Name cannot be empty' };
+  if (!name) return { ok: false, error: { key: 'snippetEditor.errNameEmpty' } };
   const command = f.command.trim();
-  if (!command) return { ok: false, error: 'Command cannot be empty' };
+  if (!command) return { ok: false, error: { key: 'snippetEditor.errCommandEmpty' } };
   const scope: SnippetScopeDto = f.scope === 'host' ? 'host' : 'global';
   const host = f.host.trim();
   if (scope === 'host' && !host) {
-    return { ok: false, error: "Host is required when scope is 'host'" };
+    return { ok: false, error: { key: 'snippetEditor.errHostRequired' } };
   }
   const tags = splitCsv(f.tags);
   const params = splitCsv(f.params);

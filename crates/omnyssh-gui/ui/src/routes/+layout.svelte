@@ -9,6 +9,7 @@
   import { refreshInterval, driveMetricsRefresh } from '$lib/stores/settings';
   import { trayBehavior, driveTray } from '$lib/stores/tray';
   import { dashboardView } from '$lib/stores/dashboardView';
+  import { locale } from '$lib/stores/locale';
   import { lastError } from '$lib/stores/notifications';
   import { confirmQuit, handleCloseRequested, quitPrompt } from '$lib/stores/quit';
   import QuitConfirm from '$lib/components/QuitConfirm.svelte';
@@ -27,6 +28,10 @@
     void trayBehavior.hydrate();
     void dashboardView.hydrate();
     void confirmQuit.hydrate();
+    // Pull the canonical language out of the plugin store (the Rust side mirrors the
+    // shared config's `ui.language` there at startup), so a choice made in the TUI or via
+    // `--lang` is picked up. A language the user picks here is never clobbered.
+    void locale.hydrate();
     // Force a metric refresh on the user's interval; re-arms when the interval changes.
     const stopRefresh = driveMetricsRefresh(() => {
       void refreshMetrics().catch(() => {});
@@ -74,5 +79,5 @@
 
 {@render children()}
 {#if $quitPrompt !== null}
-  <QuitConfirm summary={$quitPrompt} />
+  <QuitConfirm work={$quitPrompt} />
 {/if}

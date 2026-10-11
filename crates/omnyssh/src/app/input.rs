@@ -184,6 +184,11 @@ impl App {
                 }
             }
 
+            // Ctrl+L cycles the interface language (en ↔ zh-Hans) and saves it.
+            KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                return Ok(Some(AppAction::ToggleLanguage));
+            }
+
             KeyCode::Esc => {
                 // Close help popup if it's open
                 if self.view.show_help {

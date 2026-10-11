@@ -16,9 +16,14 @@ export type PaletteItem =
   | { kind: 'host'; host: HostDto }
   | CommandItem;
 
-type CommandItem = { kind: 'command'; id: 'toggle-streamer'; label: string };
+// A command row is a built-in action (there is one today). `labelKey` is a message key,
+// not text: the palette translates it to show *and* to match a query against, so a
+// localized palette still filters on the words the user actually sees.
+type CommandItem = { kind: 'command'; id: 'toggle-streamer'; labelKey: string };
 
-const COMMANDS: CommandItem[] = [{ kind: 'command', id: 'toggle-streamer', label: 'Toggle streamer mode' }];
+const COMMANDS: CommandItem[] = [
+  { kind: 'command', id: 'toggle-streamer', labelKey: 'palette.commandToggleStreamer' }
+];
 
 function hostHaystack(h: HostDto): string {
   return `${h.name} ${h.hostname} ${h.user} ${h.tags.join(' ')}`.toLowerCase();
@@ -39,12 +44,15 @@ function matches(haystack: string, query: string): boolean {
 }
 
 /** The filtered, ordered rows for the current mode: sessions, hosts, then commands (the
- *  picker keeps only the hosts). Order mirrors the stores so the list is stable. */
+ *  picker keeps only the hosts). Order mirrors the stores so the list is stable.
+ *  `translate` resolves a command's label so its row is filtered on the text the user
+ *  sees, not on the underlying key. */
 export function paletteItems(
   mode: PaletteMode,
   hosts: HostDto[],
   sessions: Session[],
-  query: string
+  query: string,
+  translate: (key: string) => string
 ): PaletteItem[] {
   // One row per name, the first: a session opens a name on its first host, so a second
   // row would open that one too. Deduped before the query, so no search shows the twin.
@@ -55,7 +63,7 @@ export function paletteItems(
   const sessionRows: PaletteItem[] = sessions
     .filter((s) => matches(sessionHaystack(s), query))
     .map((session) => ({ kind: 'session', session }));
-  const commandRows = COMMANDS.filter((c) => matches(c.label.toLowerCase(), query));
+  const commandRows = COMMANDS.filter((c) => matches(translate(c.labelKey).toLowerCase(), query));
   return [...sessionRows, ...hostRows, ...commandRows];
 }
 

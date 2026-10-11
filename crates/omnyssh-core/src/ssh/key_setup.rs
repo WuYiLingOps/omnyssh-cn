@@ -82,7 +82,10 @@ impl KeySetupStep {
         ]
     }
 
-    /// Human-readable description for UI display.
+    /// Human-readable description for UI display (English).
+    ///
+    /// For a localized description use [`crate::i18n::key_setup_step`]; this
+    /// method is kept as the English source of truth it has always been.
     pub fn description(&self) -> &'static str {
         match self {
             Self::GenerateKey => "Generating Ed25519 key pair",

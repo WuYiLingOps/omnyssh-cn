@@ -5,6 +5,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 mod app;
 mod cli;
 mod event;
+mod i18n;
 mod keybindings;
 mod term_input;
 mod ui;
@@ -115,6 +116,32 @@ async fn main() -> anyhow::Result<()> {
             eprintln!(
                 "Falling back to theme from config: '{}'",
                 app_config.ui.theme
+            );
+        }
+    }
+
+    // Apply CLI language override if provided and save it to config.
+    if let Some(ref lang) = cli.lang {
+        use omnyssh_core::config::app_config::UiConfig;
+        if UiConfig::is_valid_language(lang) {
+            tracing::info!("Applying language '{}' and saving to config", lang);
+            app_config.ui.language = lang.clone();
+
+            if let Err(e) = omnyssh_core::config::app_config::save_language_to_config(lang) {
+                eprintln!("Warning: Failed to save language to config: {}", e);
+                eprintln!("Language will be applied for this session only.");
+            } else {
+                eprintln!("✓ Language '{}' saved to config", lang);
+            }
+        } else {
+            eprintln!(
+                "Error: Unknown language '{}'. Available languages: {}",
+                lang,
+                UiConfig::available_languages().join(", ")
+            );
+            eprintln!(
+                "Falling back to language from config: '{}'",
+                app_config.ui.language
             );
         }
     }

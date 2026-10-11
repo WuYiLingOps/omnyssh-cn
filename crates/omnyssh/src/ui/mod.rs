@@ -49,9 +49,10 @@ fn draw(frame: &mut Frame, state: &AppState, view: &ViewState) {
     // Check minimum terminal size.
     let area = frame.area();
     if area.width < 80 || area.height < 24 {
-        let msg = ratatui::widgets::Paragraph::new(
-            "Terminal too small — please resize to at least 80×24.",
-        )
+        let msg = ratatui::widgets::Paragraph::new(crate::i18n::t(
+            view.lang,
+            crate::i18n::Key::TerminalTooSmall,
+        ))
         .style(ratatui::style::Style::default().fg(ratatui::style::Color::Red));
         frame.render_widget(msg, area);
         return;
@@ -90,13 +91,20 @@ fn draw(frame: &mut Frame, state: &AppState, view: &ViewState) {
                     *scroll,
                     view.tick_count,
                     &view.theme,
+                    view.lang,
                 );
             }
             SnippetPopup::QuickExecuteInput {
                 host_name,
                 command_field,
             } => {
-                popup::render_quick_execute_input(frame, host_name, command_field, &view.theme);
+                popup::render_quick_execute_input(
+                    frame,
+                    host_name,
+                    command_field,
+                    &view.theme,
+                    view.lang,
+                );
             }
             // All other snippet popups are rendered inside snippets::render.
             _ => {}
@@ -105,21 +113,21 @@ fn draw(frame: &mut Frame, state: &AppState, view: &ViewState) {
 
     // Render help popup on top if requested.
     if view.show_help {
-        popup::render_help(frame, &view.theme);
+        popup::render_help(frame, &view.theme, view.lang);
     }
 
     // The startup update popup sits above everything else but a passphrase
     // prompt, which takes the keys first.
     if let Some(update_popup) = &view.update_popup {
-        popup::render_update(frame, update_popup, &view.theme);
+        popup::render_update(frame, update_popup, &view.theme, view.lang);
     }
 
     // Kept off the terminal screen, whose keys belong to the remote shell.
     if !matches!(state.screen, Screen::Terminal) {
         if let Some(prompt) = view.passphrase_prompts.first() {
-            popup::render_passphrase_prompt(frame, prompt, &view.theme);
+            popup::render_passphrase_prompt(frame, prompt, &view.theme, view.lang);
         } else if let Some(prompt) = view.password_prompts.first() {
-            popup::render_password_prompt(frame, prompt, &view.theme);
+            popup::render_password_prompt(frame, prompt, &view.theme, view.lang);
         }
     }
 }

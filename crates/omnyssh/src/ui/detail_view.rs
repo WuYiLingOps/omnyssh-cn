@@ -13,6 +13,7 @@ use ratatui::{
 };
 
 use crate::app::{forwards_value, AppAction, AppState, SnippetPopup, ViewState};
+use crate::i18n::{t, tf, Key, Lang};
 use crate::ui::theme::threshold_color;
 use crate::ui::theme::Theme;
 use omnyssh_core::event::{DetectedService, Metrics, ServiceKind};
@@ -50,7 +51,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState)
     // Minimum terminal size guard
     if area.width < 60 || area.height < 20 {
         frame.render_widget(
-            Paragraph::new("Terminal too small for detail view. (min 60x20)")
+            Paragraph::new(t(view.lang, Key::DetailTooSmall))
                 .style(Style::default().fg(view.theme.text_error)),
             area,
         );
@@ -62,7 +63,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState)
         Some(idx) => idx,
         None => {
             frame.render_widget(
-                Paragraph::new("No host selected.")
+                Paragraph::new(t(view.lang, Key::DetailNoHostSelected))
                     .style(Style::default().fg(view.theme.text_error)),
                 area,
             );
@@ -105,18 +106,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState)
         .split(inner);
 
     // Key hints header
-    render_hints(frame, sections[0], &view.theme);
+    render_hints(frame, sections[0], &view.theme, view.lang);
 
     // Header section
-    render_header(
-        frame,
-        sections[1],
-        host,
-        metrics,
-        status,
-        tunnel,
-        &view.theme,
-    );
+    render_header(frame, sections[1], host, metrics, status, tunnel, view);
 
     // Separator
     render_separator(frame, sections[2], inner.width, &view.theme);
@@ -128,23 +121,23 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState)
     } else {
         None
     };
-    render_metrics_alerts(frame, sections[3], metrics, &view.theme);
+    render_metrics_alerts(frame, sections[3], metrics, &view.theme, view.lang);
 
     // Separator
     render_separator(frame, sections[4], inner.width, &view.theme);
 
     // Top processes section
-    render_top_processes(frame, sections[5], metrics, &view.theme);
+    render_top_processes(frame, sections[5], metrics, &view.theme, view.lang);
 
     // Separator
     render_separator(frame, sections[6], inner.width, &view.theme);
 
     // Services section
     if let Some(svcs) = services {
-        render_services(frame, sections[7], svcs, &view.theme);
+        render_services(frame, sections[7], svcs, &view.theme, view.lang);
     } else {
         frame.render_widget(
-            Paragraph::new("  SERVICES\n\n  No discovery data available. Press 'r' to refresh.")
+            Paragraph::new(t(view.lang, Key::DetailNoDiscovery))
                 .style(Style::default().fg(view.theme.text_muted)),
             sections[7],
         );
@@ -162,50 +155,73 @@ fn render_header(
     metrics: Option<&Metrics>,
     status: Option<&ConnectionStatus>,
     tunnel: Option<&TunnelStatus>,
-    theme: &Theme,
+    view: &crate::app::ViewState,
 ) {
-    let status_text = match status {
-        Some(ConnectionStatus::Connected) => ("Connected", Color::Green),
-        Some(ConnectionStatus::Connecting) => ("Connecting", Color::Yellow),
-        Some(ConnectionStatus::Failed(e)) => {
-            let msg = format!("Failed: {}", e);
-            (msg.leak() as &str, Color::Red)
+    let theme = &view.theme;
+    let lang = view.lang;
+    // The failed case needs an owned string (`tf` returns `String`), so the
+    // tuple holds `Cow` and every other arm borrows its `&'static str`.
+    let status_text: (std::borrow::Cow<str>, Color) = match status {
+        Some(ConnectionStatus::Connected) => {
+            (t(lang, Key::DetailStatusConnected).into(), Color::Green)
         }
-        _ => ("Unknown", Color::DarkGray),
+        Some(ConnectionStatus::Connecting) => {
+            (t(lang, Key::DetailStatusConnecting).into(), Color::Yellow)
+        }
+        Some(ConnectionStatus::Failed(e)) => {
+            (tf(lang, Key::DetailStatusFailed, &[e]).into(), Color::Red)
+        }
+        _ => (t(lang, Key::DetailStatusUnknown).into(), Color::DarkGray),
     };
 
     let uptime = metrics
         .and_then(|m| m.uptime.as_deref())
-        .unwrap_or("unknown");
+        .unwrap_or_else(|| t(lang, Key::DetailUptimeUnknown));
 
     // Line 1: Host info
     let line1 = Line::from(vec![
-        Span::styled(" Host: ", Style::default().fg(theme.text_secondary)),
+        Span::styled(
+            t(lang, Key::DetailLabelHost),
+            Style::default().fg(theme.text_secondary),
+        ),
         Span::styled(
             format!("{}:{}", host.hostname, host.port),
             Style::default().fg(theme.accent),
         ),
         Span::raw("   "),
-        Span::styled("User: ", Style::default().fg(theme.text_secondary)),
+        Span::styled(
+            t(lang, Key::DetailLabelUser),
+            Style::default().fg(theme.text_secondary),
+        ),
         Span::styled(&host.user, Style::default().fg(theme.text_warning)),
         Span::raw("   "),
-        Span::styled("Up: ", Style::default().fg(theme.text_secondary)),
+        Span::styled(
+            t(lang, Key::DetailLabelUp),
+            Style::default().fg(theme.text_secondary),
+        ),
         Span::styled(uptime, Style::default().fg(theme.text_success)),
         Span::raw("   "),
-        Span::styled("Status: ", Style::default().fg(theme.text_secondary)),
+        Span::styled(
+            t(lang, Key::DetailLabelStatus),
+            Style::default().fg(theme.text_secondary),
+        ),
         Span::styled(status_text.0, Style::default().fg(status_text.1)),
     ]);
 
     // Line 2: OS info from discovery
+    let os_pending = t(lang, Key::DetailOsPending);
     let os_display = metrics
         .and_then(|m| m.os_info.as_deref())
-        .unwrap_or("(discovery pending)");
+        .unwrap_or(os_pending);
 
     let mut line2 = Line::from(vec![
-        Span::styled(" OS: ", Style::default().fg(theme.text_secondary)),
+        Span::styled(
+            t(lang, Key::DetailLabelOs),
+            Style::default().fg(theme.text_secondary),
+        ),
         Span::styled(
             os_display,
-            if os_display == "(discovery pending)" {
+            if os_display == os_pending {
                 Style::default().fg(theme.text_muted)
             } else {
                 Style::default().fg(theme.accent)
@@ -218,16 +234,30 @@ fn render_header(
     if !host.local_forwards.is_empty() {
         let forwards = forwards_value(host);
         let (state, color) = match tunnel {
-            Some(TunnelStatus::Up) => (String::from("up"), theme.text_success),
-            Some(TunnelStatus::Connecting) => (String::from("connecting"), theme.text_warning),
-            Some(TunnelStatus::Retrying(reason)) => {
-                (format!("retrying: {reason}"), theme.text_warning)
+            Some(TunnelStatus::Up) => {
+                (t(lang, Key::DetailTunnelUp).to_string(), theme.text_success)
             }
-            Some(TunnelStatus::Failed(reason)) => (format!("failed: {reason}"), theme.text_error),
-            Some(TunnelStatus::Stopped) | None => (String::from("off"), theme.text_muted),
+            Some(TunnelStatus::Connecting) => (
+                t(lang, Key::DetailTunnelConnecting).to_string(),
+                theme.text_warning,
+            ),
+            Some(TunnelStatus::Retrying(reason)) => (
+                tf(lang, Key::DetailTunnelRetrying, &[reason]),
+                theme.text_warning,
+            ),
+            Some(TunnelStatus::Failed(reason)) => (
+                tf(lang, Key::DetailTunnelFailed, &[reason]),
+                theme.text_error,
+            ),
+            Some(TunnelStatus::Stopped) | None => {
+                (t(lang, Key::DetailTunnelOff).to_string(), theme.text_muted)
+            }
         };
         line2.spans.extend([
-            Span::styled("   Tunnel: ", Style::default().fg(theme.text_secondary)),
+            Span::styled(
+                t(lang, Key::DetailLabelTunnel),
+                Style::default().fg(theme.text_secondary),
+            ),
             Span::styled(forwards, Style::default().fg(theme.accent)),
             Span::raw(" — "),
             Span::styled(state, Style::default().fg(color)),
@@ -242,13 +272,25 @@ fn render_header(
 // Metrics
 // ---------------------------------------------------------------------------
 
-fn render_metrics_alerts(frame: &mut Frame, area: Rect, metrics: Option<&Metrics>, theme: &Theme) {
-    render_metrics_column(frame, area, metrics, theme);
+fn render_metrics_alerts(
+    frame: &mut Frame,
+    area: Rect,
+    metrics: Option<&Metrics>,
+    theme: &Theme,
+    lang: Lang,
+) {
+    render_metrics_column(frame, area, metrics, theme, lang);
 }
 
-fn render_metrics_column(frame: &mut Frame, area: Rect, metrics: Option<&Metrics>, theme: &Theme) {
+fn render_metrics_column(
+    frame: &mut Frame,
+    area: Rect,
+    metrics: Option<&Metrics>,
+    theme: &Theme,
+    lang: Lang,
+) {
     let mut lines = vec![Line::from(Span::styled(
-        " METRICS",
+        t(lang, Key::DetailMetricsTitle),
         Style::default()
             .fg(theme.title)
             .add_modifier(Modifier::BOLD),
@@ -256,7 +298,7 @@ fn render_metrics_column(frame: &mut Frame, area: Rect, metrics: Option<&Metrics
 
     if metrics.is_none() {
         lines.push(Line::from(Span::styled(
-            " unavailable",
+            t(lang, Key::DetailMetricsUnavailable),
             Style::default().fg(theme.text_secondary),
         )));
     }
@@ -334,13 +376,16 @@ fn render_metrics_column(frame: &mut Frame, area: Rect, metrics: Option<&Metrics
         // Load average
         if let Some(load) = &m.load_avg {
             lines.push(Line::from(vec![
-                Span::styled(" Load: ", Style::default().fg(theme.text_secondary)),
+                Span::styled(
+                    t(lang, Key::DetailLabelLoad),
+                    Style::default().fg(theme.text_secondary),
+                ),
                 Span::styled(load.as_str(), Style::default().fg(theme.accent)),
             ]));
         }
     } else {
         lines.push(Line::from(Span::styled(
-            " (no metrics available)",
+            t(lang, Key::DetailNoMetrics),
             Style::default().fg(theme.text_muted),
         )));
     }
@@ -357,9 +402,15 @@ fn render_metrics_column(frame: &mut Frame, area: Rect, metrics: Option<&Metrics
 // ---------------------------------------------------------------------------
 
 /// Renders the "TOP PROCESSES" panel — up to 3 processes by CPU usage.
-fn render_top_processes(frame: &mut Frame, area: Rect, metrics: Option<&Metrics>, theme: &Theme) {
+fn render_top_processes(
+    frame: &mut Frame,
+    area: Rect,
+    metrics: Option<&Metrics>,
+    theme: &Theme,
+    lang: Lang,
+) {
     let mut lines = vec![Line::from(Span::styled(
-        " TOP PROCESSES",
+        t(lang, Key::DetailTopProcessesTitle),
         Style::default()
             .fg(theme.title)
             .add_modifier(Modifier::BOLD),
@@ -378,12 +429,18 @@ fn render_top_processes(frame: &mut Frame, area: Rect, metrics: Option<&Metrics>
                         format!("{:<20.20}", p.name),
                         Style::default().fg(theme.text_primary),
                     ),
-                    Span::styled("  cpu ", Style::default().fg(theme.text_secondary)),
+                    Span::styled(
+                        t(lang, Key::DetailProcCpu),
+                        Style::default().fg(theme.text_secondary),
+                    ),
                     Span::styled(
                         format!("{:>5.1}%", p.cpu_percent),
                         Style::default().fg(threshold_color(p.cpu_percent)),
                     ),
-                    Span::styled("   mem ", Style::default().fg(theme.text_secondary)),
+                    Span::styled(
+                        t(lang, Key::DetailProcMem),
+                        Style::default().fg(theme.text_secondary),
+                    ),
                     Span::styled(
                         format!("{:>5.1}%", p.mem_percent),
                         Style::default().fg(threshold_color(p.mem_percent)),
@@ -393,7 +450,7 @@ fn render_top_processes(frame: &mut Frame, area: Rect, metrics: Option<&Metrics>
         }
         _ => {
             lines.push(Line::from(Span::styled(
-                " (process data unavailable)",
+                t(lang, Key::DetailProcUnavailable),
                 Style::default().fg(theme.text_muted),
             )));
         }
@@ -402,9 +459,15 @@ fn render_top_processes(frame: &mut Frame, area: Rect, metrics: Option<&Metrics>
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), area);
 }
 
-fn render_services(frame: &mut Frame, area: Rect, services: &[DetectedService], theme: &Theme) {
+fn render_services(
+    frame: &mut Frame,
+    area: Rect,
+    services: &[DetectedService],
+    theme: &Theme,
+    lang: Lang,
+) {
     let mut lines = vec![Line::from(Span::styled(
-        " SERVICES",
+        t(lang, Key::DetailServicesTitle),
         Style::default()
             .fg(theme.title)
             .add_modifier(Modifier::BOLD),
@@ -412,7 +475,7 @@ fn render_services(frame: &mut Frame, area: Rect, services: &[DetectedService], 
 
     if services.is_empty() {
         lines.push(Line::from(Span::styled(
-            " No services detected",
+            t(lang, Key::DetailNoServices),
             Style::default().fg(theme.text_muted),
         )));
     } else {
@@ -421,7 +484,7 @@ fn render_services(frame: &mut Frame, area: Rect, services: &[DetectedService], 
             let color = Color::DarkGray;
 
             let service_name = service_name_display(&service.kind);
-            let status_info = service_status_display(service);
+            let status_info = service_status_display(service, lang);
             // Show the correct hotkey based on service type, not position in list
             let f_key_hint = service_hotkey(&service.kind);
 
@@ -482,7 +545,7 @@ fn service_hotkey(kind: &ServiceKind) -> String {
 }
 
 /// Get status display for service (e.g., "8 running, 1 stopped", "repl lag: 2.3s").
-fn service_status_display(service: &DetectedService) -> String {
+fn service_status_display(service: &DetectedService, lang: Lang) -> String {
     use omnyssh_core::event::MetricValue;
 
     match service.kind {
@@ -498,9 +561,13 @@ fn service_status_display(service: &DetectedService) -> String {
                 }
             }
             if stopped > 0 {
-                format!("{} running, {} stopped", running, stopped)
+                tf(
+                    lang,
+                    Key::DetailDockerRunningStopped,
+                    &[&running.to_string(), &stopped.to_string()],
+                )
             } else {
-                format!("{} containers running", running)
+                tf(lang, Key::DetailDockerRunning, &[&running.to_string()])
             }
         }
         ServiceKind::PostgreSQL => {
@@ -508,20 +575,20 @@ fn service_status_display(service: &DetectedService) -> String {
                 if metric.name == "replication_lag_seconds" {
                     let MetricValue::Integer(lag) = metric.value;
                     if lag > 0 {
-                        return format!("repl lag: {}s", lag);
+                        return tf(lang, Key::DetailPgReplLag, &[&lag.to_string()]);
                     }
                 }
             }
-            "active, no replication lag".to_string()
+            t(lang, Key::DetailPgNoReplLag).to_string()
         }
         ServiceKind::Nginx => {
             for metric in &service.metrics {
                 if metric.name == "recent_502_504_errors" {
                     let MetricValue::Integer(errors) = metric.value;
-                    return format!("active, {} errors/5min", errors);
+                    return tf(lang, Key::DetailNginxErrors, &[&errors.to_string()]);
                 }
             }
-            "active, 0 errors/5min".to_string()
+            t(lang, Key::DetailNginxNoErrors).to_string()
         }
         ServiceKind::Redis => {
             let mut mem_used = 0i64;
@@ -532,9 +599,9 @@ fn service_status_display(service: &DetectedService) -> String {
                 }
             }
             if mem_used > 0 {
-                format!("active, {}MB mem", mem_used)
+                tf(lang, Key::DetailRedisMem, &[&mem_used.to_string()])
             } else {
-                "active".to_string()
+                t(lang, Key::DetailActive).to_string()
             }
         }
         ServiceKind::NodeJS => {
@@ -546,9 +613,13 @@ fn service_status_display(service: &DetectedService) -> String {
                 }
             }
             if node_processes > 0 {
-                format!("{} process(es) running", node_processes)
+                tf(
+                    lang,
+                    Key::DetailNodeProcesses,
+                    &[&node_processes.to_string()],
+                )
             } else {
-                "no processes".to_string()
+                t(lang, Key::DetailNodeNoProcesses).to_string()
             }
         }
     }
@@ -577,7 +648,7 @@ fn render_separator(frame: &mut Frame, area: Rect, width: u16, theme: &Theme) {
 // Key hints header
 // ---------------------------------------------------------------------------
 
-fn render_hints(frame: &mut Frame, area: Rect, theme: &Theme) {
+fn render_hints(frame: &mut Frame, area: Rect, theme: &Theme, lang: Lang) {
     let hints = Line::from(vec![
         Span::styled(
             " Enter",
@@ -585,7 +656,10 @@ fn render_hints(frame: &mut Frame, area: Rect, theme: &Theme) {
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(":Connect", Style::default().fg(theme.text_muted)),
+        Span::styled(
+            t(lang, Key::DetailHintConnect),
+            Style::default().fg(theme.text_muted),
+        ),
         Span::raw("  "),
         Span::styled(
             "r",
@@ -593,7 +667,10 @@ fn render_hints(frame: &mut Frame, area: Rect, theme: &Theme) {
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(":Refresh", Style::default().fg(theme.text_muted)),
+        Span::styled(
+            t(lang, Key::DetailHintRefresh),
+            Style::default().fg(theme.text_muted),
+        ),
         Span::raw("  "),
         Span::styled(
             "Esc",
@@ -601,7 +678,10 @@ fn render_hints(frame: &mut Frame, area: Rect, theme: &Theme) {
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(":← Dashboard", Style::default().fg(theme.text_muted)),
+        Span::styled(
+            t(lang, Key::DetailHintDashboard),
+            Style::default().fg(theme.text_muted),
+        ),
         Span::raw("  "),
         Span::styled(
             "4-9",
@@ -609,7 +689,10 @@ fn render_hints(frame: &mut Frame, area: Rect, theme: &Theme) {
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(":Quick view", Style::default().fg(theme.text_muted)),
+        Span::styled(
+            t(lang, Key::DetailHintQuickView),
+            Style::default().fg(theme.text_muted),
+        ),
         Span::raw("  "),
         Span::styled(
             "f",
@@ -617,7 +700,10 @@ fn render_hints(frame: &mut Frame, area: Rect, theme: &Theme) {
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(":Tunnel", Style::default().fg(theme.text_muted)),
+        Span::styled(
+            t(lang, Key::DetailHintTunnel),
+            Style::default().fg(theme.text_muted),
+        ),
     ]);
 
     frame.render_widget(Paragraph::new(hints), area);

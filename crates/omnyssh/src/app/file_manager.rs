@@ -318,7 +318,9 @@ impl App {
             state.hosts.get(idx).cloned()
         };
         let Some(host) = host else {
-            self.view.status_message = Some("Host not found.".to_string());
+            self.view.status_message = Some(
+                crate::i18n::t(self.view.lang, crate::i18n::Key::StatusFmHostNotFound).to_string(),
+            );
             return;
         };
 
@@ -332,7 +334,11 @@ impl App {
         self.view.file_manager.connected_host = None;
         self.view.file_manager.remote = FilePanelView::default();
 
-        self.view.status_message = Some(format!("Connecting to '{}'…", host.name));
+        self.view.status_message = Some(crate::i18n::tf(
+            self.view.lang,
+            crate::i18n::Key::StatusFmConnecting,
+            &[&host.name],
+        ));
         self.view.file_manager.sftp_connecting = true;
 
         // In the background: the login may wait on a password prompt. Every
@@ -450,7 +456,9 @@ impl App {
     pub(crate) async fn fm_next_drive(&mut self) {
         let next = roots_after(&sftp::local_roots(), &self.view.file_manager.local.cwd);
         if next.is_empty() {
-            self.view.status_message = Some("No other drives".to_string());
+            self.view.status_message = Some(
+                crate::i18n::t(self.view.lang, crate::i18n::Key::StatusFmNoOtherDrives).to_string(),
+            );
             return;
         }
         self.view.file_manager.active_panel = FmPanel::Local;
@@ -477,19 +485,31 @@ impl App {
     /// Each item goes to the background task once the one before it is done.
     pub(crate) async fn fm_paste(&mut self) {
         let Some(clipboard) = self.view.file_manager.clipboard.clone() else {
-            self.view.status_message = Some("Nothing in clipboard.".to_string());
+            self.view.status_message = Some(
+                crate::i18n::t(self.view.lang, crate::i18n::Key::StatusFmNothingInClipboard)
+                    .to_string(),
+            );
             return;
         };
 
         let dst_panel = self.view.file_manager.active_panel.clone();
 
         if clipboard.source_panel == dst_panel {
-            self.view.status_message = Some("Cannot paste to the same panel.".to_string());
+            self.view.status_message = Some(
+                crate::i18n::t(
+                    self.view.lang,
+                    crate::i18n::Key::StatusFmCannotPasteSamePanel,
+                )
+                .to_string(),
+            );
             return;
         }
 
         if clipboard.paths.is_empty() {
-            self.view.status_message = Some("Clipboard is empty.".to_string());
+            self.view.status_message = Some(
+                crate::i18n::t(self.view.lang, crate::i18n::Key::StatusFmClipboardEmpty)
+                    .to_string(),
+            );
             return;
         }
 
@@ -499,7 +519,9 @@ impl App {
 
         // Nothing would be sent, and the progress would wait for it for good.
         if self.sftp_manager.is_none() {
-            self.view.status_message = Some("Not connected to a host.".to_string());
+            self.view.status_message = Some(
+                crate::i18n::t(self.view.lang, crate::i18n::Key::StatusFmNotConnected).to_string(),
+            );
             return;
         }
 
@@ -550,7 +572,11 @@ impl App {
         self.send_next_op();
 
         if count > 1 {
-            self.view.status_message = Some(format!("Queued {count} items for transfer…"));
+            self.view.status_message = Some(crate::i18n::tf(
+                self.view.lang,
+                crate::i18n::Key::StatusFmQueuedItems,
+                &[&count.to_string()],
+            ));
         }
     }
 
@@ -573,8 +599,10 @@ impl App {
     fn sftp_busy(&mut self) -> bool {
         let busy = self.view.file_manager.pending_ops > 0 || !self.sftp_queue.is_empty();
         if busy {
-            self.view.status_message =
-                Some("Wait for the running operation to finish.".to_string());
+            self.view.status_message = Some(
+                crate::i18n::t(self.view.lang, crate::i18n::Key::StatusFmWaitForRunning)
+                    .to_string(),
+            );
         }
         busy
     }

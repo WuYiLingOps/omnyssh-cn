@@ -8,6 +8,7 @@
   // A listing on its way dims the current one: a remote one can wait behind a transfer.
   // Semantic tokens only — no colour literals (§5.1).
   import type { Snippet } from 'svelte';
+  import { t } from 'svelte-i18n';
   import { Icon } from '$lib/theme';
   import type { FileEntryDto } from '$lib/bindings';
   import { formatBytes, formatDate, type Pane, type PaneSide } from '$lib/stores/sftp';
@@ -69,7 +70,7 @@
     <div class="mt-1 flex items-center gap-2 text-xs text-faint">
       <span class="min-w-0 truncate font-mono" title={pane.path}>{pane.path || '—'}</span>
       {#if pane.loading && pane.entries.length > 0}
-        <span class="shrink-0">Loading…</span>
+        <span class="shrink-0">{$t('sftp.loading')}</span>
       {/if}
     </div>
   </header>
@@ -78,18 +79,18 @@
     {#if pane.error}
       <p class="px-2 py-6 text-center text-sm text-status-crit">{$maskText(pane.error)}</p>
     {:else if pane.loading && pane.entries.length === 0}
-      <p class="px-2 py-6 text-center text-sm text-faint">Loading…</p>
+      <p class="px-2 py-6 text-center text-sm text-faint">{$t('sftp.loading')}</p>
     {:else if pane.entries.length === 0}
-      <p class="px-2 py-6 text-center text-sm text-faint">Empty directory</p>
+      <p class="px-2 py-6 text-center text-sm text-faint">{$t('sftp.emptyDirectory')}</p>
     {:else}
       <div
         class="flex items-center gap-2 px-2 pb-1 pl-[2.125rem] text-[0.65rem] font-semibold uppercase
           tracking-[0.12em] text-faint"
         aria-hidden="true"
       >
-        <span class="min-w-0 flex-1 pl-[1.4rem]">Name</span>
-        <span class="shrink-0">Size</span>
-        <span class={modifiedCol}>Modified</span>
+        <span class="min-w-0 flex-1 pl-[1.4rem]">{$t('sftp.columnName')}</span>
+        <span class="shrink-0">{$t('sftp.columnSize')}</span>
+        <span class={modifiedCol}>{$t('sftp.columnModified')}</span>
       </div>
       <ul class="space-y-0.5 transition-opacity {pane.loading ? 'opacity-50' : ''}">
         {#each pane.entries as entry, i (i)}
@@ -107,7 +108,7 @@
                 type="button"
                 role="checkbox"
                 aria-checked={marked}
-                aria-label="Mark {entry.name}"
+                aria-label={$t('sftp.mark', { values: { name: entry.name } })}
                 class="grid h-4 w-4 shrink-0 place-items-center rounded border transition
                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus
                   {marked ? 'border-accent bg-accent text-accent-fg' : 'border-strong text-transparent'}"
@@ -133,7 +134,9 @@
               {#if !isParent}
                 <span
                   class="{modifiedCol} tabular-nums text-xs text-faint"
-                  title={entry.modified != null ? `Modified ${formatDate(entry.modified, true)}` : undefined}
+                  title={entry.modified != null
+                    ? $t('sftp.modifiedAt', { values: { date: formatDate(entry.modified, true) } })
+                    : undefined}
                 >
                   {formatDate(entry.modified)}
                 </span>

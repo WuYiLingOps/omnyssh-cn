@@ -4,13 +4,21 @@
   // `formToInput`; on submit the parent persists + reloads, and a rejected save
   // surfaces inline without closing. Semantic tokens only.
   import { onMount, tick } from 'svelte';
+  import { t } from 'svelte-i18n';
   import type { HostInputDto } from '$lib/bindings';
   import { Button, Icon } from '$lib/theme';
   import Modal from '$lib/components/Modal.svelte';
   import Select from '$lib/components/Select.svelte';
   import { isWindows } from '$lib/platform';
   import { maskAddress, maskHostname, maskText, streamerMode } from '$lib/stores/streamer';
-  import { bracketed, emptyForwardRow, formToInput, type HostFormFields } from './hostForm';
+  import {
+    bracketed,
+    emptyForwardRow,
+    formToInput,
+    formErrorMessage,
+    type FormError,
+    type HostFormFields
+  } from './hostForm';
 
   let {
     mode,
@@ -33,7 +41,12 @@
   // changes under a live instance.
   // svelte-ignore state_referenced_locally
   let fields = $state<HostFormFields>({ ...initial });
-  let error = $state<string | null>(null);
+  // A validation failure is a message key resolved on render; a rejected save carries
+  // its own already-translated message.
+  let error = $state<FormError | string | null>(null);
+  const errorText = $derived(
+    error === null ? null : typeof error === 'string' ? error : formErrorMessage(error, $t)
+  );
   let saving = $state(false);
   let nameEl = $state<HTMLInputElement>();
   let hostnameEl = $state<HTMLInputElement>();
@@ -101,7 +114,7 @@
 
   // On edit the DTO omits identity/password (§3.4), so the fields start blank and mean
   // "keep the stored value"; on add they mean "none".
-  const secretHint = $derived(mode === 'edit' ? 'Leave blank to keep the current value' : undefined);
+  const secretHint = $derived(mode === 'edit' ? $t('hostEditor.keepCurrent') : undefined);
 
   const label = 'block space-y-1 text-xs font-medium text-muted';
   const forwardGrid = 'grid grid-cols-[8.5rem,1fr,4.5rem,1.75rem] items-center gap-2';
@@ -115,7 +128,7 @@
   const maskedField = 'cursor-default text-muted';
 </script>
 
-<Modal label={mode === 'add' ? 'Add host' : 'Edit host'} onClose={onCancel}>
+<Modal label={mode === 'add' ? $t('hostEditor.addTitle') : $t('hostEditor.editTitle')} onClose={onCancel}>
   <form
     onsubmit={(e) => {
       e.preventDefault();
@@ -124,32 +137,34 @@
     class="flex min-h-0 flex-col"
   >
     <header class="border-b border-default px-5 py-3.5">
-      <h2 class="text-sm font-semibold">{mode === 'add' ? 'Add host' : 'Edit host'}</h2>
+      <h2 class="text-sm font-semibold">
+        {mode === 'add' ? $t('hostEditor.addTitle') : $t('hostEditor.editTitle')}
+      </h2>
     </header>
 
     <div class="min-h-0 flex-1 space-y-3.5 overflow-y-auto px-5 py-4">
       {#if imported}
         <p class="rounded-lg bg-surface-inset px-3 py-2 text-xs text-muted">
-          Imported from <span class="font-mono">~/.ssh/config</span>. Saving keeps your own copy in
-          <span class="font-mono">hosts.toml</span> and OmnySSH uses it from then on — your SSH config
-          file is never written, and later edits to it stop showing up for this host.
+          {$t('hostEditor.importedNotice')} <span class="font-mono">~/.ssh/config</span
+          >{$t('hostEditor.importedNoticeMid')} <span class="font-mono">hosts.toml</span>
+          {$t('hostEditor.importedNoticeEnd')}
         </p>
       {/if}
       <label class={label}>
-        <span>Name {mode === 'edit' ? '(fixed)' : ''}</span>
+        <span>{mode === 'edit' ? $t('hostEditor.nameFixed') : $t('hostEditor.name')}</span>
         <input
           bind:this={nameEl}
           bind:value={fields.name}
           class="{field} {mode === 'edit' ? 'cursor-not-allowed text-muted' : ''}"
-          placeholder="web-prod-1"
+          placeholder={$t('hostEditor.namePlaceholder')}
           readonly={mode === 'edit'}
-          title={mode === 'edit' ? 'To rename, delete this host and add it again' : undefined}
+          title={mode === 'edit' ? $t('hostEditor.nameRenameTitle') : undefined}
         />
       </label>
 
       <div class="flex items-end gap-2">
         <label class="{label} min-w-0 flex-1">
-          <span>Hostname / IP</span>
+          <span>{$t('hostEditor.hostnameIp')}</span>
           <input
             bind:this={hostnameEl}
             bind:value={
@@ -166,71 +181,81 @@
         </label>
         {#if hostnameMasked}
           <button type="button" class="{smallBtn} mb-1.5 shrink-0" onclick={() => reveal(() => hostnameEl)}>
-            Reveal
+            {$t('hostEditor.reveal')}
           </button>
         {/if}
       </div>
 
       <div class="grid grid-cols-[1fr,7rem] gap-3">
         <label class={label}>
-          <span>User</span>
-          <input bind:this={userEl} bind:value={fields.user} class={field} placeholder="root" />
+          <span>{$t('hostEditor.user')}</span>
+          <input
+            bind:this={userEl}
+            bind:value={fields.user}
+            class={field}
+            placeholder={$t('hostEditor.userPlaceholder')}
+          />
         </label>
         <label class={label}>
-          <span>Port</span>
+          <span>{$t('hostEditor.port')}</span>
           <input bind:value={fields.port} inputmode="numeric" class={field} placeholder="22" />
         </label>
       </div>
 
       <label class={label}>
-        <span>Identity file</span>
+        <span>{$t('hostEditor.identityFile')}</span>
         <input
           bind:value={fields.identityFile}
           class="{field} font-mono"
-          placeholder={secretHint ?? '~/.ssh/id_ed25519'}
+          placeholder={secretHint ?? $t('hostEditor.identityFilePlaceholder')}
         />
       </label>
 
       <label class={label}>
-        <span>Password</span>
+        <span>{$t('hostEditor.password')}</span>
         <input
           type="password"
           bind:value={fields.password}
           class={field}
-          placeholder={secretHint ?? 'Login password, not the key passphrase'}
+          placeholder={secretHint ?? $t('hostEditor.passwordPlaceholder')}
           autocomplete="off"
         />
       </label>
 
       <div class="space-y-1">
         <label class={label}>
-          <span>Tags</span>
+          <span>{$t('hostEditor.tags')}</span>
           <input
             bind:value={fields.tags}
             class={field}
-            placeholder="prod, web"
+            placeholder={$t('hostEditor.tagsPlaceholder')}
             aria-describedby="host-tags-hint"
           />
         </label>
-        <p id="host-tags-hint" class="text-xs text-faint">The first tag groups the host on the dashboard.</p>
+        <p id="host-tags-hint" class="text-xs text-faint">{$t('hostEditor.tagsHint')}</p>
       </div>
 
       <label class={label}>
-        <span>Notes</span>
-        <textarea bind:value={fields.notes} rows="2" class="{field} resize-y" placeholder="Optional"></textarea>
+        <span>{$t('hostEditor.notes')}</span>
+        <textarea
+          bind:value={fields.notes}
+          rows="2"
+          class="{field} resize-y"
+          placeholder={$t('hostEditor.notesPlaceholder')}
+        ></textarea>
       </label>
 
       <div class="grid grid-cols-2 gap-3">
         <label class={label}>
-          <span>Monitoring</span>
+          <span>{$t('hostEditor.monitoring')}</span>
           <Select bind:value={fields.monitoring} class={field}>
-            <option value="ssh">SSH metrics</option>
-            <option value="tcpPort">TCP port check</option>
+            <option value="ssh">{$t('hostEditor.monitoringSsh')}</option>
+            <option value="tcpPort">{$t('hostEditor.monitoringTcp')}</option>
           </Select>
         </label>
         {#if fields.monitoring === 'tcpPort'}
           <label class={label}>
-            <span>Probe port</span>
+            <span>{$t('hostEditor.probePort')}</span>
             <input
               bind:value={fields.monitorPort}
               inputmode="numeric"
@@ -241,19 +266,18 @@
         {/if}
       </div>
       {#if fields.monitoring === 'tcpPort'}
-        <p class="text-xs text-faint">Checks the port only — no login, and no metrics on the card.</p>
+        <p class="text-xs text-faint">{$t('hostEditor.probeHint')}</p>
       {/if}
 
       <div class="flex items-center justify-between gap-4 border-t border-default pt-3.5">
         <div class="min-w-0">
-          <p class="text-sm text-fg">Forward SSH agent</p>
+          <p class="text-sm text-fg">{$t('hostEditor.forwardAgent')}</p>
           <p class="text-xs text-faint">
             {#if isWindows}
-              Not available on Windows yet.
+              {$t('hostEditor.forwardAgentUnavailable')}
             {:else}
-              Terminals here can use your local agent's keys, like <span class="font-mono">ssh -A</span>
-              — for sudo or hopping on. Anyone with root on this server can use them while a
-              terminal is open.
+              {$t('hostEditor.forwardAgentHint')} <span class="font-mono">ssh -A</span>
+              {$t('hostEditor.forwardAgentHintEnd')}
             {/if}
           </p>
         </div>
@@ -261,7 +285,7 @@
           type="button"
           role="switch"
           aria-checked={fields.forwardAgent}
-          aria-label="Forward SSH agent"
+          aria-label={$t('hostEditor.forwardAgent')}
           disabled={isWindows}
           onclick={() => (fields.forwardAgent = !fields.forwardAgent)}
           class="relative h-6 w-11 shrink-0 rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-50 {fields.forwardAgent
@@ -280,11 +304,11 @@
            a host:port the server reaches. One tunnel per host carries every row. -->
       <div class="space-y-2 border-t border-default pt-3.5">
         <div class="flex items-center justify-between gap-3">
-          <span class="text-xs font-medium text-muted">Port forwarding</span>
+          <span class="text-xs font-medium text-muted">{$t('hostEditor.portForwarding')}</span>
           <div class="flex gap-2">
             {#if hide && firstHeldRow >= 0}
               <button type="button" class={smallBtn} onclick={() => reveal(() => localEls[firstHeldRow])}>
-                Reveal
+                {$t('hostEditor.reveal')}
               </button>
             {/if}
             <button
@@ -296,15 +320,15 @@
               }}
             >
               <Icon name="plus" size={12} />
-              Add forward
+              {$t('hostEditor.addForward')}
             </button>
           </div>
         </div>
         {#if fields.forwards.length}
           <div class="{forwardGrid} text-[11px] text-faint">
-            <span>Local port</span>
-            <span>Remote host</span>
-            <span>Port</span>
+            <span>{$t('hostEditor.localPort')}</span>
+            <span>{$t('hostEditor.remoteHost')}</span>
+            <span>{$t('hostEditor.fwdPort')}</span>
             <span></span>
           </div>
           {#each fields.forwards as row, i (i)}
@@ -323,7 +347,7 @@
                 readonly={localMasked}
                 class="{field} font-mono {localMasked ? maskedField : ''}"
                 placeholder="9443"
-                aria-label="Forward {i + 1} local port"
+                aria-label={$t('hostEditor.fwdLocalPort', { values: { n: i + 1 } })}
               />
               <input
                 bind:value={
@@ -336,20 +360,20 @@
                 readonly={remoteMasked}
                 class="{field} font-mono {remoteMasked ? maskedField : ''}"
                 placeholder="localhost"
-                aria-label="Forward {i + 1} remote host"
+                aria-label={$t('hostEditor.fwdRemoteHost', { values: { n: i + 1 } })}
               />
               <input
                 bind:value={row.remotePort}
                 inputmode="numeric"
                 class="{field} font-mono"
                 placeholder="9443"
-                aria-label="Forward {i + 1} remote port"
+                aria-label={$t('hostEditor.fwdRemotePort', { values: { n: i + 1 } })}
               />
               <button
                 type="button"
                 class="grid h-7 w-7 place-items-center rounded-lg text-muted transition hover:bg-surface-inset hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-                title="Remove forward {i + 1}"
-                aria-label="Remove forward {i + 1}"
+                title={$t('hostEditor.removeForward', { values: { n: i + 1 } })}
+                aria-label={$t('hostEditor.removeForward', { values: { n: i + 1 } })}
                 onclick={() => {
                   fields.forwards.splice(i, 1);
                   heldRows.splice(i, 1);
@@ -360,17 +384,17 @@
             </div>
           {/each}
           <p class="text-xs text-faint">
-            The local port listens on this machine only — write <span class="font-mono">0.0.0.0:8080</span>
-            to share it on your network. The remote host is resolved by the server, so
-            <span class="font-mono">localhost</span> is the server itself.
+            {$t('hostEditor.forwardsHint')} <span class="font-mono">0.0.0.0:8080</span>
+            {$t('hostEditor.forwardsHintMid')}
+            <span class="font-mono">localhost</span>{$t('hostEditor.forwardsHintEnd')}
           </p>
           <div class="flex items-center justify-between gap-4 pt-1">
-            <span class="text-sm text-fg">Start tunnel when OmnySSH opens</span>
+            <span class="text-sm text-fg">{$t('hostEditor.tunnelAutostart')}</span>
             <button
               type="button"
               role="switch"
               aria-checked={fields.tunnelAutostart}
-              aria-label="Start tunnel when OmnySSH opens"
+              aria-label={$t('hostEditor.tunnelAutostart')}
               onclick={() => (fields.tunnelAutostart = !fields.tunnelAutostart)}
               class="relative h-6 w-11 shrink-0 rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus {fields.tunnelAutostart
                 ? 'bg-accent'
@@ -385,21 +409,20 @@
           </div>
         {:else}
           <p class="text-xs text-faint">
-            Reach a service on this server — a database, a web UI — at a port on this machine,
-            like <span class="font-mono">ssh -L</span>.
+            {$t('hostEditor.noForwardsHint')} <span class="font-mono">ssh -L</span>.
           </p>
         {/if}
       </div>
 
-      {#if error}
-        <p class="text-xs text-status-crit">{$maskText(error)}</p>
+      {#if errorText}
+        <p class="text-xs text-status-crit">{$maskText(errorText)}</p>
       {/if}
     </div>
 
     <footer class="flex justify-end gap-2 border-t border-default px-5 py-3">
-      <Button variant="ghost" onclick={onCancel}>Cancel</Button>
+      <Button variant="ghost" onclick={onCancel}>{$t('hostEditor.cancel')}</Button>
       <Button variant="primary" type="submit" disabled={saving}>
-        {mode === 'add' ? 'Add host' : 'Save'}
+        {mode === 'add' ? $t('hostEditor.addTitle') : $t('hostEditor.save')}
       </Button>
     </footer>
   </form>

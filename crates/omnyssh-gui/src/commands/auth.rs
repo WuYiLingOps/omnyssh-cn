@@ -13,12 +13,8 @@ pub async fn unlock_identity(key_path: String, passphrase: String) -> Result<(),
         omnyssh_core::ssh::identity::unlock(&key_path, &passphrase)
     })
     .await
-    .map_err(|e| CommandError {
-        message: format!("unlock task failed: {e}"),
-    })?
-    .map_err(|e| CommandError {
-        message: e.to_string(),
-    })
+    .map_err(|e| CommandError::coded("taskFailed", format!("unlock task failed: {e}")))?
+    .map_err(|e| CommandError::plain(e.to_string()))
 }
 
 /// Answer the `password-required` prompt `request_id`: a password to try, or
@@ -27,7 +23,6 @@ pub async fn unlock_identity(key_path: String, passphrase: String) -> Result<(),
 #[tauri::command]
 #[specta::specta]
 pub fn answer_password(request_id: u64, password: Option<String>) -> Result<(), CommandError> {
-    omnyssh_core::ssh::password::answer(request_id, password).map_err(|e| CommandError {
-        message: e.to_string(),
-    })
+    omnyssh_core::ssh::password::answer(request_id, password)
+        .map_err(|e| CommandError::plain(e.to_string()))
 }

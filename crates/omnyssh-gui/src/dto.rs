@@ -9,11 +9,14 @@ use omnyssh_core::config::snippets::{Snippet, SnippetScope};
 use omnyssh_core::event::{
     DetectedService, MetricValue, Metrics, ProcessInfo, ServiceKind, ServiceMetric,
 };
+use omnyssh_core::i18n::Lang;
 use omnyssh_core::ssh::client::{ConnectionStatus, Host, HostSource, MonitorMode};
 use omnyssh_core::ssh::key_setup::KeySetupStep;
 use omnyssh_core::ssh::sftp::FileEntry;
 use omnyssh_core::ssh::tunnel::{LocalForward, TunnelStatus};
 use omnyssh_core::update::UpdateInfo;
+
+use crate::error::CommandError;
 
 /// Host origin, mirrors `omnyssh_core::ssh::client::HostSource`.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -290,13 +293,19 @@ pub struct UpdateConfigDto {
 }
 
 /// One step of the auto key-setup flow, for the progress view (tech-gui.md §4.2/§4.3).
-/// `index` is 1-based (`1..=total`); `description` is the core's human-readable label.
-/// Maps from the core `KeySetupStep`.
+/// `index` is 1-based (`1..=total`).
+///
+/// Carries both a stable `code` the frontend translates (`keySetup.step.<code>`) and a
+/// `description` in the *backend's* language as the fallback — a client whose packs
+/// lack the code still has readable text (i18n plan §3.7).
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct KeySetupStepDto {
     pub index: u8,
     pub total: u8,
+    /// A stable, language-independent identifier: `generateKey`, `copyPublicKey`, …
+    pub code: String,
+    /// The core's label, localized to the resolved UI language.
     pub description: String,
 }
 
@@ -370,11 +379,19 @@ impl From<LocalForwardDto> for LocalForward {
 /// Rejects a rule `hosts.toml` could not read back. Rules are stored in the `ssh -L`
 /// notation, so one that does not survive it — a zero port, an empty host — would be
 /// saved, then dropped with a warning on the next load.
-pub fn check_forwards(forwards: &[LocalForwardDto]) -> Result<(), String> {
+///
+/// Carries a code and the offending rule so the frontend renders the reason in the
+/// user's language (i18n plan §3.7).
+pub fn check_forwards(forwards: &[LocalForwardDto]) -> Result<(), CommandError> {
     for dto in forwards {
         let forward = LocalForward::from(dto.clone());
         if forward.to_string().parse::<LocalForward>().as_ref() != Ok(&forward) {
-            return Err(format!("'{forward}' is not a valid port forward"));
+            let shown = forward.to_string();
+            return Err(CommandError::with_params(
+                "invalidForward",
+                format!("'{shown}' is not a valid port forward"),
+                [("forward", shown.as_str())],
+            ));
         }
     }
     Ok(())
@@ -597,15 +614,39 @@ impl From<UpdateConfigDto> for UpdateConfig {
     }
 }
 
-impl From<KeySetupStep> for KeySetupStepDto {
-    fn from(step: KeySetupStep) -> Self {
+impl KeySetupStepDto {
+    /// The step at `lang` (i18n plan §3.7): the frontend prefers `code`, the
+    /// localized `description` is the fallback.
+    pub fn localized(step: KeySetupStep, lang: Lang) -> Self {
         Self {
             // The core enum is a plain C-like discriminant (`GenerateKey = 1 ..=
             // FinalCheck = 6`), so the cast is the 1-based position directly.
             index: step as u8,
             total: KeySetupStep::all_steps().len() as u8,
-            description: step.description().to_string(),
+            code: step_code(step).to_string(),
+            description: omnyssh_core::i18n::key_setup_step(step, lang).to_string(),
         }
+    }
+}
+
+impl From<KeySetupStep> for KeySetupStepDto {
+    /// The step in English — the language a caller without one gets.
+    fn from(step: KeySetupStep) -> Self {
+        Self::localized(step, Lang::En)
+    }
+}
+
+/// A stable identifier for a key-setup step, mirrored by `keySetup.step.*` in the
+/// frontend packs. Not derived from the enum's `Debug`: that would tie the wire
+/// contract to a formatting choice.
+fn step_code(step: KeySetupStep) -> &'static str {
+    match step {
+        KeySetupStep::GenerateKey => "generateKey",
+        KeySetupStep::CopyPublicKey => "copyPublicKey",
+        KeySetupStep::VerifyKeyAuth => "verifyKeyAuth",
+        KeySetupStep::DisablePassword => "disablePassword",
+        KeySetupStep::ReloadSshd => "reloadSshd",
+        KeySetupStep::FinalCheck => "finalCheck",
     }
 }
 
@@ -1034,24 +1075,53 @@ mod tests {
 
     #[test]
     fn key_setup_step_dto_maps_index_total_and_label() {
-        // The progress view reads a 1-based `index` out of `total` plus the core's
-        // label (tech-gui.md §4.2). The first/last steps pin the discriminant range.
+        // The progress view reads a 1-based `index` out of `total`, the stable `code`
+        // it translates, and the backend-localized `description` as the fallback
+        // (tech-gui.md §4.2, i18n plan §3.7).
         let dto = KeySetupStepDto::from(KeySetupStep::VerifyKeyAuth);
         assert_eq!(dto.index, 3);
         assert_eq!(dto.total, 6);
+        assert_eq!(dto.code, "verifyKeyAuth");
         assert_eq!(dto.description, "Verifying key authentication");
         assert_eq!(KeySetupStepDto::from(KeySetupStep::GenerateKey).index, 1);
         assert_eq!(KeySetupStepDto::from(KeySetupStep::FinalCheck).index, 6);
     }
 
     #[test]
+    fn key_setup_step_dto_localizes_its_description() {
+        // Same code, two languages: the code never changes, only the fallback text.
+        let en = KeySetupStepDto::localized(KeySetupStep::ReloadSshd, Lang::En);
+        let zh = KeySetupStepDto::localized(KeySetupStep::ReloadSshd, Lang::ZhHans);
+        assert_eq!(en.code, zh.code);
+        assert_eq!(en.description, "Reloading SSH service");
+        assert_ne!(en.description, zh.description);
+    }
+
+    #[test]
+    fn every_key_setup_step_has_a_stable_code() {
+        // The frontend's `keySetup.step.*` keys are derived from these; a missing or
+        // duplicated code would silently render a raw key.
+        let codes: Vec<String> = KeySetupStep::all_steps()
+            .iter()
+            .map(|step| KeySetupStepDto::from(*step).code)
+            .collect();
+        let unique: std::collections::HashSet<&String> = codes.iter().collect();
+        assert_eq!(
+            unique.len(),
+            codes.len(),
+            "duplicate step code in {codes:?}"
+        );
+        assert!(codes.iter().all(|c| !c.trim().is_empty()));
+    }
+
+    #[test]
     fn key_setup_step_dto_uses_camel_case_wire_names() {
-        // The frontend reads `index`/`total`/`description` (tech-gui.md §4.2).
+        // The frontend reads `index`/`total`/`code`/`description` (tech-gui.md §4.2).
         let json = serde_json::to_string(&KeySetupStepDto::from(KeySetupStep::CopyPublicKey))
             .expect("serialise KeySetupStepDto");
         assert_eq!(
             json,
-            r#"{"index":2,"total":6,"description":"Copying public key to server"}"#
+            r#"{"index":2,"total":6,"code":"copyPublicKey","description":"Copying public key to server"}"#
         );
     }
 
@@ -1138,10 +1208,14 @@ mod tests {
             rule(None, 8080, "", 80),
             rule(None, 8080, "[web", 80),
         ] {
-            assert!(
-                check_forwards(std::slice::from_ref(&bad)).is_err(),
-                "{bad:?}"
-            );
+            let err = check_forwards(std::slice::from_ref(&bad)).expect_err("rejected: {bad:?}");
+            // The frontend translates this by code, so it must be the coded variant
+            // and carry the offending rule (i18n plan §3.7).
+            assert_eq!(err.code.as_deref(), Some("invalidForward"), "{bad:?}");
+            assert!(err
+                .params
+                .as_ref()
+                .is_some_and(|p| p.contains_key("forward")));
         }
     }
 

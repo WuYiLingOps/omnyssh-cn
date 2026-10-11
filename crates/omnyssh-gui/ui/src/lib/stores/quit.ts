@@ -105,35 +105,34 @@ export function countLiveWork(
   };
 }
 
-/** "2 terminals, 1 transfer and 1 tunnel"; empty when nothing is live. */
-export function describeLiveWork(work: LiveWork): string {
-  const parts = (
-    [
-      [work.terminals, 'terminal'],
-      [work.transfers, 'transfer'],
-      [work.tunnels, 'tunnel'],
-      [work.snippetRuns, 'snippet run']
-    ] as const
-  )
-    .filter(([n]) => n > 0)
-    .map(([n, noun]) => `${n} ${noun}${n === 1 ? '' : 's'}`);
-  if (parts.length < 2) return parts.join('');
-  return `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
+/** One live-work tally to name in the quit question: a count and which noun it takes. */
+export type LiveWorkPart = { kind: 'terminals' | 'transfers' | 'tunnels' | 'snippetRuns'; count: number };
+
+/** The live work as a list of named tallies, in display order, omitting zeros. Kept as
+ *  data so the component can format it in the active language (ICU plurals, list
+ *  joining) rather than the store baking in English. */
+export function liveWorkParts(work: LiveWork): LiveWorkPart[] {
+  const parts: LiveWorkPart[] = [];
+  if (work.terminals > 0) parts.push({ kind: 'terminals', count: work.terminals });
+  if (work.transfers > 0) parts.push({ kind: 'transfers', count: work.transfers });
+  if (work.tunnels > 0) parts.push({ kind: 'tunnels', count: work.tunnels });
+  if (work.snippetRuns > 0) parts.push({ kind: 'snippetRuns', count: work.snippetRuns });
+  return parts;
 }
 
-/** The open question's summary, or null when none is open. */
-export const quitPrompt = writable<string | null>(null);
+/** The open question's live-work tallies, or null when none is open. */
+export const quitPrompt = writable<LiveWorkPart[] | null>(null);
 
 /** Opens the question if quitting would cut anything off and the user wants to be asked;
  *  false means quit now. One question at a time: a second request finds it open. */
 function askToQuit(): boolean {
   if (get(quitPrompt) !== null) return true;
   if (!get(confirmQuit)) return false;
-  const summary = describeLiveWork(
+  const parts = liveWorkParts(
     countLiveWork(get(sessions), get(sftp), get(tunnels), get(snippetRun))
   );
-  if (!summary) return false;
-  quitPrompt.set(summary);
+  if (parts.length === 0) return false;
+  quitPrompt.set(parts);
   return true;
 }
 

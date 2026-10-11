@@ -19,10 +19,14 @@ pub fn handle_input(key: KeyEvent, view: &mut ViewState) -> Option<AppAction> {
         return handle_search_input(key, hlv);
     }
 
-    handle_normal_input(key, hlv)
+    handle_normal_input(key, hlv, view.lang)
 }
 
-fn handle_normal_input(key: KeyEvent, hlv: &mut HostListView) -> Option<AppAction> {
+fn handle_normal_input(
+    key: KeyEvent,
+    hlv: &mut HostListView,
+    lang: crate::i18n::Lang,
+) -> Option<AppAction> {
     match key.code {
         KeyCode::Down | KeyCode::Char('j') => {
             hlv.select_next();
@@ -38,7 +42,7 @@ fn handle_normal_input(key: KeyEvent, hlv: &mut HostListView) -> Option<AppActio
             None
         }
         KeyCode::Char('a') => {
-            hlv.popup = Some(HostPopup::Add(HostForm::empty()));
+            hlv.popup = Some(HostPopup::Add(HostForm::empty(lang)));
             None
         }
         KeyCode::Char('e') => {

@@ -11,6 +11,7 @@ mod commands;
 mod dto;
 mod error;
 mod events;
+mod i18n;
 #[cfg(target_os = "macos")]
 mod menu;
 mod state;
@@ -126,6 +127,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             unlock_identity,
             answer_password,
             set_tray_behavior,
+            i18n::set_language,
             check_update,
             install_update,
             load_update_config,

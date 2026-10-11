@@ -7,8 +7,7 @@
   import { maskText, streamerMode } from '$lib/stores/streamer';
   import { streamerChordLabel } from '$lib/stores/ui';
   import { Icon, StatusDot } from '$lib/theme';
-
-  const streamerLabel = 'Streamer mode is on';
+  import { t } from 'svelte-i18n';
 </script>
 
 <footer
@@ -19,7 +18,7 @@
     <!-- A long error (a hint to act on) is cut to one line; hover shows all of it. -->
     <span class="min-w-0 truncate text-status-crit" title={text}>{text}</span>
   {:else}
-    <span class="min-w-0 truncate">Ready</span>
+    <span class="min-w-0 truncate">{$t('app.ready')}</span>
   {/if}
   <div class="flex shrink-0 items-center gap-3">
     {#if $streamerMode}
@@ -28,21 +27,27 @@
       <span
         class="flex text-fg"
         role="img"
-        title="{streamerLabel} ({streamerChordLabel})"
-        aria-label={streamerLabel}
+        title={$t('statusBar.streamerOn') + ' (' + streamerChordLabel + ')'}
+        aria-label={$t('statusBar.streamerOn')}
       >
         <Icon name="eye" size={14} />
       </span>
     {/if}
-    <span>{$hostSummary.total} {$hostSummary.total === 1 ? 'host' : 'hosts'}</span>
+    <span>{$t('statusBar.hostCount', { values: { count: $hostSummary.total } })}</span>
     <span class="flex items-center gap-1.5">
-      <StatusDot status="ok" label="online" />{$hostSummary.online} online
+      <StatusDot status="ok" label={$t('statusBar.onlineLabel')} />{$t('statusBar.online', {
+        values: { count: $hostSummary.online }
+      })}
     </span>
     <span class="flex items-center gap-1.5">
-      <StatusDot status="warn" label="alert" />{$hostSummary.alert} alert
+      <StatusDot status="warn" label={$t('statusBar.alertLabel')} />{$t('statusBar.alert', {
+        values: { count: $hostSummary.alert }
+      })}
     </span>
     <span class="flex items-center gap-1.5">
-      <StatusDot status="off" label="offline" />{$hostSummary.offline} offline
+      <StatusDot status="off" label={$t('statusBar.offlineLabel')} />{$t('statusBar.offline', {
+        values: { count: $hostSummary.offline }
+      })}
     </span>
   </div>
 </footer>

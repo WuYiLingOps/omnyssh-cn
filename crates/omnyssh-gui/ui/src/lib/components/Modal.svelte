@@ -6,6 +6,7 @@
   // dialogs don't each re-implement it.
   import { onDestroy, type Snippet } from 'svelte';
   import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import { dialogs } from '$lib/stores/dialogs';
 
   let {
@@ -42,7 +43,7 @@
   <button
     type="button"
     tabindex="-1"
-    aria-label="Dismiss"
+    aria-label={$t('modal.dismiss')}
     class="absolute inset-0 bg-overlay"
     onclick={() => backdropCloses && onClose()}
   ></button>

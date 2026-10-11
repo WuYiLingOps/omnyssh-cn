@@ -6,6 +6,7 @@
   // Glass/blur per the brandbook.
   import { tick } from 'svelte';
   import { Icon, StatusDot } from '$lib/theme';
+  import { t } from 'svelte-i18n';
   import { palette, paletteItems, paletteSignature, nextIndex, hostStatusDot } from '$lib/stores/palette';
   import { hosts } from '$lib/stores/hosts';
   import { statuses } from '$lib/stores/statuses';
@@ -20,7 +21,7 @@
   let query = $state('');
   let selected = $state(0);
 
-  const items = $derived(paletteItems($palette.mode, $hosts, $sessions, query));
+  const items = $derived(paletteItems($palette.mode, $hosts, $sessions, query, $t));
   // A value-stable key over the result set: unchanged by a background status flip (same
   // ids, new objects), so the reset effect below can ignore those (see the effect).
   const itemsSignature = $derived(paletteSignature(items));
@@ -29,11 +30,15 @@
   const firstCommand = $derived(items.findIndex((it) => it.kind === 'command'));
 
   const placeholder = $derived(
-    $palette.mode === 'pickHost' ? 'Pick a host…' : 'Search hosts, sessions and commands…'
+    $palette.mode === 'pickHost' ? $t('palette.placeholderPick') : $t('palette.placeholderNavigate')
   );
   // The navigator always lists its commands, so only a query can empty it.
   const emptyMessage = $derived(
-    $palette.mode === 'pickHost' ? (query ? 'No matching hosts.' : 'No hosts configured.') : 'No matches.'
+    $palette.mode === 'pickHost'
+      ? query
+        ? $t('palette.emptyPickNoMatch')
+        : $t('palette.emptyPickNone')
+      : $t('palette.emptyNavigate')
   );
 
   // Focus returns here when the overlay closes, so a keyboard user is not dropped to
@@ -146,12 +151,12 @@
     class="fixed inset-0 z-50 flex items-start justify-center px-4 pt-[14vh]"
     role="dialog"
     aria-modal="true"
-    aria-label={$palette.mode === 'pickHost' ? 'Pick a host' : 'Command palette'}
+    aria-label={$palette.mode === 'pickHost' ? $t('palette.pickHost') : $t('palette.navigate')}
   >
     <button
       type="button"
       tabindex="-1"
-      aria-label="Dismiss"
+      aria-label={$t('palette.dismiss')}
       class="absolute inset-0 bg-overlay"
       onclick={() => palette.close()}
     ></button>
@@ -180,13 +185,13 @@
           <!-- Keyed by position: rows are stateless. -->
           {#each items as item, i (i)}
             {#if $palette.mode === 'navigate' && i === firstSession}
-              <li class={sectionHead}>Sessions</li>
+              <li class={sectionHead}>{$t('palette.sessions')}</li>
             {/if}
             {#if $palette.mode === 'navigate' && i === firstHost}
-              <li class={sectionHead}>Hosts</li>
+              <li class={sectionHead}>{$t('palette.hosts')}</li>
             {/if}
             {#if i === firstCommand}
-              <li class={sectionHead}>Commands</li>
+              <li class={sectionHead}>{$t('palette.commands')}</li>
             {/if}
             <li>
               <button
@@ -203,7 +208,7 @@
                   <span class="min-w-0 flex-1 truncate">{sessionLabel(item.session)}</span>
                 {:else if item.kind === 'command'}
                   <Icon name="eye" size={16} />
-                  <span class="min-w-0 flex-1 truncate">{item.label}</span>
+                  <span class="min-w-0 flex-1 truncate">{$t(item.labelKey)}</span>
                   <span class="shrink-0 font-mono text-xs {selected === i ? '' : 'text-faint'}">
                     {streamerChordLabel}
                   </span>
@@ -223,9 +228,9 @@
       <div
         class="flex items-center gap-4 border-t border-default px-4 py-2 font-mono text-[11px] text-faint"
       >
-        <span>↑↓ navigate</span>
-        <span>↵ select</span>
-        <span>esc close</span>
+        <span>{$t('palette.hintNavigate')}</span>
+        <span>{$t('palette.hintSelect')}</span>
+        <span>{$t('palette.hintClose')}</span>
       </div>
     </div>
   </div>

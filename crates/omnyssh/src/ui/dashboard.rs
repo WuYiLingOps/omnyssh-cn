@@ -26,6 +26,7 @@ use ratatui::{
 };
 
 use crate::app::{AppAction, AppState, GridRow, GroupHeader, NavDir, ViewState};
+use crate::i18n::{t, Key};
 use crate::ui::card::{render_card, CardData, CARD_HEIGHT, CARD_MIN_WIDTH};
 use crate::ui::{host_list, popup};
 
@@ -67,17 +68,27 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState)
     if let Some(popup) = &hlv.popup {
         use crate::app::HostPopup;
         match popup {
-            HostPopup::Add(form) => popup::render_host_form(frame, form, "Add Host", &view.theme),
-            HostPopup::Edit { form, .. } => {
-                popup::render_host_form(frame, form, "Edit Host", &view.theme)
-            }
+            HostPopup::Add(form) => popup::render_host_form(
+                frame,
+                form,
+                t(view.lang, Key::PopupAddHostTitle),
+                &view.theme,
+                view.lang,
+            ),
+            HostPopup::Edit { form, .. } => popup::render_host_form(
+                frame,
+                form,
+                t(view.lang, Key::PopupEditHostTitle),
+                &view.theme,
+                view.lang,
+            ),
             HostPopup::DeleteConfirm(idx) => {
                 let name = state
                     .hosts
                     .get(*idx)
                     .map(|h| h.name.as_str())
                     .unwrap_or("?");
-                popup::render_delete_confirm(frame, name, &view.theme);
+                popup::render_delete_confirm(frame, name, &view.theme, view.lang);
             }
             HostPopup::KeySetupConfirm(idx) => {
                 let host = state.hosts.get(*idx);
@@ -106,6 +117,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState)
             hlv.tag_popup_selected,
             hlv.tag_filter.as_deref(),
             &view.theme,
+            view.lang,
         );
     }
     // Note: help popup is rendered by ui::mod on top of everything.
@@ -119,43 +131,50 @@ fn render_header(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewSta
     let hlv = &view.host_list;
     let mut spans = vec![
         Span::styled(
-            " Dashboard ",
+            format!(" {} ", t(view.lang, Key::DashboardTitle)),
             Style::default()
                 .fg(view.theme.title)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled("  ", Style::default()),
         Span::styled(
-            format!("[sort: {}]", hlv.sort_order.label()),
+            format!(
+                "[{}: {}]",
+                t(view.lang, Key::DashboardSort),
+                hlv.sort_order.label(view.lang)
+            ),
             Style::default().fg(view.theme.accent),
         ),
         Span::styled("  ", Style::default()),
     ];
     if let Some(tag) = &hlv.tag_filter {
         spans.push(Span::styled(
-            format!("[filter: {}]", tag),
+            format!("[{}: {}]", t(view.lang, Key::DashboardFilter), tag),
             Style::default().fg(view.theme.text_warning),
         ));
         spans.push(Span::styled("  ", Style::default()));
     }
     if !hlv.search_query.is_empty() {
         spans.push(Span::styled(
-            format!("[search: {}]", hlv.search_query),
+            format!(
+                "[{}: {}]",
+                t(view.lang, Key::DashboardSearch),
+                hlv.search_query
+            ),
             Style::default().fg(view.theme.highlight),
         ));
         spans.push(Span::styled("  ", Style::default()));
     }
 
     // Build key hints.
-    let mut hints =
-        String::from("r:refresh  s:sort  t:tags  g:group  /:search  a:add  x:execute  f:tunnel");
+    let mut hints = String::from(t(view.lang, Key::DashboardHints));
 
     // Check if selected host needs SSH key setup.
     // Show "Shift+K:ssh-setup" hint if selected host has password but no identity_file.
     if let Some(idx) = hlv.selected_host_idx() {
         if let Some(host) = state.hosts.get(idx) {
             if host.password.is_some() && host.identity_file.is_none() {
-                hints.push_str("  Shift+K:ssh-setup");
+                hints.push_str(t(view.lang, Key::DashboardHintKeySetup));
             }
         }
     }
@@ -180,10 +199,8 @@ fn render_grid(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState
 
     if state.hosts.is_empty() {
         frame.render_widget(
-            Paragraph::new(
-                "\n  No hosts configured.\n\n  Press  a  to add a host, or  r  to reload from ~/.ssh/config.",
-            )
-            .style(Style::default().fg(view.theme.text_muted)),
+            Paragraph::new(t(view.lang, Key::DashboardEmptyNoHosts))
+                .style(Style::default().fg(view.theme.text_muted)),
             area,
         );
         return;
@@ -191,7 +208,7 @@ fn render_grid(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState
 
     if hlv.filtered_indices.is_empty() {
         frame.render_widget(
-            Paragraph::new("\n  No hosts match the current filter.")
+            Paragraph::new(t(view.lang, Key::DashboardEmptyNoMatch))
                 .style(Style::default().fg(view.theme.text_muted)),
             area,
         );
@@ -311,6 +328,7 @@ fn render_grid(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState
                     },
                     is_selected,
                     &view.theme,
+                    view.lang,
                 );
             }
 
@@ -328,7 +346,13 @@ fn render_group_header(
     group: &GroupHeader,
     view: &ViewState,
 ) {
-    let title = format!("{} ({}) ", group.title(), group.len);
+    // An untagged section draws the localized label; a tagged one draws its
+    // own tag verbatim.
+    let name = match &group.label {
+        Some(tag) => tag.as_str(),
+        None => t(view.lang, Key::Untagged),
+    };
+    let title = format!("{} ({}) ", name, group.len);
     let fill = (area.width as usize).saturating_sub(title.chars().count() + 1);
     let title_style = if group.label.is_some() {
         Style::default()
@@ -405,7 +429,7 @@ pub fn handle_input(key: KeyEvent, view: &mut ViewState) -> Option<AppAction> {
         // Host management.
         KeyCode::Char('a') => {
             use crate::app::{HostForm, HostPopup};
-            view.host_list.popup = Some(HostPopup::Add(HostForm::empty()));
+            view.host_list.popup = Some(HostPopup::Add(HostForm::empty(view.lang)));
             None
         }
         KeyCode::Char('e') => Some(AppAction::OpenEditPopup),

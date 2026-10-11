@@ -6,6 +6,7 @@
   // `sftp-*` events, §3.4). Local browsing uses list_local_dir (returns directly);
   // remote uses sftp_list (arrives as an event). Semantic tokens only (§5.1).
   import { onMount, onDestroy } from 'svelte';
+  import { t } from 'svelte-i18n';
   import { homeDir } from '@tauri-apps/api/path';
   import { getCurrentWebview } from '@tauri-apps/api/webview';
   import { Button, Icon } from '$lib/theme';
@@ -25,7 +26,6 @@
     baseName,
     isPlainName,
     transferState,
-    CANCELLED,
     type PaneSide
   } from '$lib/stores/sftp';
   import { lastError } from '$lib/stores/notifications';
@@ -271,7 +271,7 @@
     const caseless = side === 'local' && (isWindows || isMac);
     const twice = repeatedName(names, caseless);
     if (twice) {
-      lastError.set(`Two of the items would both be '${twice}' in ${dir}.`);
+      lastError.set(String($t('sftp.errRepeatedName', { values: { name: twice, dir } })));
       return;
     }
     const count = pane?.path === dir ? clashCount(names, pane.entries, caseless) : 0;
@@ -306,7 +306,7 @@
     const id = backendId;
     if (id == null || !view || dir == null) return;
     const odd = files.find((file) => !isPlainName(file.name, isWindows));
-    if (odd) lastError.set(`'${odd.name}' is not a name that can be created here.`);
+    if (odd) lastError.set(String($t('sftp.errNotPlainName', { values: { name: odd.name } })));
     const plain = files.filter((file) => isPlainName(file.name, isWindows));
     unlessClashing('local', plain.map((file) => file.name), dir, () =>
       enqueue(
@@ -486,7 +486,7 @@
   // folders.
   function uploadDropped(paths: string[], dir: string): void {
     const items = paths.map((path) => ({ path, name: baseName(path) }));
-    if (items.some((item) => !item.name)) lastError.set('A drive or volume cannot be uploaded.');
+    if (items.some((item) => !item.name)) lastError.set(String($t('sftp.errDriveUpload')));
     upload(items.filter((item) => item.name), dir);
   }
 
@@ -580,7 +580,9 @@
     aria-hidden="true"
   >
     <Icon name={drag.from === 'local' ? 'upload' : 'download'} size={13} />
-    {drag.files.length === 1 ? drag.files[0].name : `${drag.files.length} items`}
+    {drag.files.length === 1
+      ? drag.files[0].name
+      : $t('sftp.dragItems', { values: { count: drag.files.length } })}
   </div>
 {/if}
 
@@ -593,17 +595,19 @@
 >
   {#if openError}
     <div class="flex flex-1 flex-col items-center justify-center gap-2 p-10 text-center">
-      <p class="font-medium">Could not open SFTP on {session.hostName}</p>
+      <p class="font-medium">{$t('sftp.openFailed', { values: { host: session.hostName } })}</p>
       <p class="max-w-md text-sm text-muted">{$maskText(openError)}</p>
     </div>
   {:else if !view}
     <div class="flex flex-1 items-center justify-center p-10 text-center">
-      <p class="text-sm text-muted">Connecting to {session.hostName}…</p>
+      <p class="text-sm text-muted">
+        {$t('sftp.connecting', { values: { host: session.hostName } })}
+      </p>
     </div>
   {:else}
     <div class="grid min-h-0 flex-1 grid-cols-2 divide-x divide-default">
       <SftpPane
-        title="Local"
+        title={$t('sftp.local')}
         side="local"
         pane={view.local}
         dropActive={drag?.target?.side === 'local'}
@@ -618,12 +622,12 @@
             <Select
               bind:value={selectedDrive}
               class={driveSelect}
-              aria-label="Local drive"
-              title="Switch drive"
+              aria-label={$t('sftp.localDrive')}
+              title={$t('sftp.switchDrive')}
               onchange={(e) => switchDrive(e.currentTarget.value)}
             >
               {#if !drive}
-                <option value="" disabled>Drive</option>
+                <option value="" disabled>{$t('sftp.drive')}</option>
               {/if}
               {#each roots as root (root)}
                 <option value={root}>{root.replace(/[\\/]$/, '')}</option>
@@ -633,18 +637,18 @@
           <button
             type="button"
             class={toolBtn}
-            title="Upload marked files and folders to the remote directory"
+            title={$t('sftp.uploadTitle')}
             disabled={localMarked.length === 0}
             onclick={() => upload(localMarked)}
           >
             <Icon name="upload" size={13} />
-            Upload
+            {$t('sftp.upload')}
           </button>
           <button
             type="button"
             class={toolBtn}
-            title="Refresh"
-            aria-label="Refresh local"
+            title={$t('sftp.refresh')}
+            aria-label={$t('sftp.refreshLocal')}
             onclick={() => {
               // A drive plugged in since shows up too.
               void loadRoots();
@@ -671,21 +675,26 @@
           <button
             type="button"
             class={toolBtn}
-            title="Download marked files and folders to the local directory"
+            title={$t('sftp.downloadTitle')}
             disabled={remoteMarked.length === 0}
             onclick={() => download(remoteMarked)}
           >
             <Icon name="download" size={13} />
-            Download
-          </button>
-          <button type="button" class={toolBtn} title="New folder" onclick={() => openPrompt('mkdir')}>
-            <Icon name="plus" size={13} />
-            Folder
+            {$t('sftp.download')}
           </button>
           <button
             type="button"
             class={toolBtn}
-            title="Rename the marked entry"
+            title={$t('sftp.newFolderTitle')}
+            onclick={() => openPrompt('mkdir')}
+          >
+            <Icon name="plus" size={13} />
+            {$t('sftp.folder')}
+          </button>
+          <button
+            type="button"
+            class={toolBtn}
+            title={$t('sftp.renameTitle')}
             disabled={!singleRemoteMark}
             onclick={() => openPrompt('rename')}
           >
@@ -694,8 +703,8 @@
           <button
             type="button"
             class={toolBtn}
-            title="Delete marked entries"
-            aria-label="Delete marked entries"
+            title={$t('sftp.deleteTitle')}
+            aria-label={$t('sftp.deleteTitle')}
             disabled={remoteMarked.length === 0}
             onclick={remove}
           >
@@ -704,8 +713,8 @@
           <button
             type="button"
             class={toolBtn}
-            title="Refresh"
-            aria-label="Refresh remote"
+            title={$t('sftp.refresh')}
+            aria-label={$t('sftp.refreshRemote')}
             onclick={() => refreshRemote(view.remote.path)}
           >
             <Icon name="refresh" size={13} />
@@ -715,14 +724,14 @@
     </div>
 
     {#if transfer}
-      <div class="shrink-0 border-t border-default px-4 py-2.5" aria-label="transfer progress">
+      <div class="shrink-0 border-t border-default px-4 py-2.5" aria-label={$t('sftp.transferProgress')}>
         <div class="flex items-center justify-between gap-3 text-xs text-muted">
           <span class="min-w-0 truncate">
             {transfer.preparing
-              ? 'Preparing'
+              ? $t('sftp.preparing')
               : transfer.kind === 'upload'
-                ? 'Uploading'
-                : 'Downloading'}
+                ? $t('sftp.uploading')
+                : $t('sftp.downloading')}
             <span class="font-mono text-fg">{transfer.name}</span>{transfer.preparing ? '…' : ''}
           </span>
           <span class="flex shrink-0 items-center gap-3">
@@ -736,12 +745,12 @@
             <button
               type="button"
               class={toolBtn}
-              title="Cancel transfer"
-              aria-label="Cancel transfer"
+              title={$t('sftp.cancelTransfer')}
+              aria-label={$t('sftp.cancelTransfer')}
               onclick={cancelTransfers}
             >
               <Icon name="close" size={13} />
-              Cancel
+              {$t('sftp.cancel')}
             </button>
           </span>
         </div>
@@ -761,16 +770,19 @@
       <!-- A cancel the user asked for is news, not a failure. -->
       <div
         class="shrink-0 border-t border-default px-4 py-2 text-xs
-          {view.error === CANCELLED ? 'text-muted' : 'text-status-crit'}"
+          {view.cancelled ? 'text-muted' : 'text-status-crit'}"
       >
-        {$maskText(view.error)}
+        {view.cancelled ? $t('sftp.cancelled') : $maskText(view.error)}
       </div>
     {/if}
   {/if}
 </div>
 
 {#if active && prompt}
-  <Modal label={prompt.kind === 'mkdir' ? 'New folder' : 'Rename'} onClose={() => (prompt = null)}>
+  <Modal
+    label={prompt.kind === 'mkdir' ? $t('sftp.newFolder') : $t('sftp.rename')}
+    onClose={() => (prompt = null)}
+  >
     <form
       onsubmit={(e) => {
         e.preventDefault();
@@ -779,7 +791,9 @@
     >
       <header class="border-b border-default px-5 py-3.5">
         <h2 class="text-sm font-semibold">
-          {prompt.kind === 'mkdir' ? 'New folder' : `Rename ${prompt.target?.name ?? ''}`}
+          {prompt.kind === 'mkdir'
+            ? $t('sftp.newFolder')
+            : $t('sftp.renameNamed', { values: { name: prompt.target?.name ?? '' } })}
         </h2>
       </header>
       <div class="px-5 py-4">
@@ -788,8 +802,8 @@
           autofocus
           bind:value={prompt.value}
           class={field}
-          placeholder={prompt.kind === 'mkdir' ? 'Folder name' : 'New name'}
-          aria-label={prompt.kind === 'mkdir' ? 'Folder name' : 'New name'}
+          placeholder={prompt.kind === 'mkdir' ? $t('sftp.folderName') : $t('sftp.newName')}
+          aria-label={prompt.kind === 'mkdir' ? $t('sftp.folderName') : $t('sftp.newName')}
         />
       </div>
       <footer class="flex justify-end gap-2 border-t border-default px-5 py-3">
@@ -798,14 +812,14 @@
           class="rounded-full px-4 py-2 text-sm text-muted transition hover:bg-surface-inset hover:text-fg"
           onclick={() => (prompt = null)}
         >
-          Cancel
+          {$t('sftp.cancel')}
         </button>
         <button
           type="submit"
           class="rounded-full bg-accent px-5 py-2 text-sm font-medium text-accent-fg transition hover:opacity-90 disabled:opacity-50"
           disabled={!prompt.value.trim()}
         >
-          {prompt.kind === 'mkdir' ? 'Create' : 'Rename'}
+          {prompt.kind === 'mkdir' ? $t('sftp.create') : $t('sftp.rename')}
         </button>
       </footer>
     </form>
@@ -813,23 +827,24 @@
 {/if}
 
 {#if active && overwrite}
-  <Modal label="Replace existing items" onClose={() => (overwrite = null)}>
+  <Modal label={$t('sftp.replaceTitle')} onClose={() => (overwrite = null)}>
     <div class="space-y-3 px-5 py-4">
-      <h2 class="text-sm font-semibold">Replace existing items</h2>
+      <h2 class="text-sm font-semibold">{$t('sftp.replaceTitle')}</h2>
       <p class="text-sm text-muted">
-        {overwrite.count} item(s) already exist in <span class="font-mono">{overwrite.dir}</span>.
-        Folders are merged and files with the same name are replaced.
+        {$t('sftp.replaceBody', { values: { count: overwrite.count } })} <span class="font-mono"
+          >{overwrite.dir}</span
+        >. {$t('sftp.replaceBodyEnd')}
       </p>
       <div class="flex justify-end gap-2 pt-1">
-        <Button variant="ghost" onclick={() => (overwrite = null)}>Cancel</Button>
-        <Button variant="primary" onclick={replace}>Replace</Button>
+        <Button variant="ghost" onclick={() => (overwrite = null)}>{$t('sftp.cancel')}</Button>
+        <Button variant="primary" onclick={replace}>{$t('sftp.replace')}</Button>
       </div>
     </div>
   </Modal>
 {/if}
 
 {#if active && view?.preview}
-  <Modal label="File preview" onClose={closePreview}>
+  <Modal label={$t('sftp.preview')} onClose={closePreview}>
     <header class="border-b border-default px-5 py-3.5">
       <h2 class="truncate font-mono text-xs text-muted" title={view.preview.path}>
         {view.preview.path}
@@ -837,7 +852,7 @@
     </header>
     <div class="min-h-0 flex-1 overflow-auto px-5 py-4">
       {#if view.preview.content.length === 0}
-        <p class="text-sm text-faint">Empty file.</p>
+        <p class="text-sm text-faint">{$t('sftp.emptyFile')}</p>
       {:else}
         <pre class="select-text whitespace-pre-wrap break-words font-mono text-xs text-fg">{view.preview
             .content}</pre>
@@ -849,7 +864,7 @@
         class="rounded-full px-4 py-2 text-sm text-muted transition hover:bg-surface-inset hover:text-fg"
         onclick={closePreview}
       >
-        Close
+        {$t('sftp.close')}
       </button>
     </footer>
   </Modal>

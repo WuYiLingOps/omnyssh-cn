@@ -4,6 +4,12 @@ import type { ConnectionStatusDto, HostDto } from '$lib/bindings';
 import type { Session } from './sessions';
 import { palette, paletteItems, paletteSignature, nextIndex, hostStatusDot } from './palette';
 
+// The palette filters a command by its *translated* label, so the tests pass a stub that
+// maps the one command key to the English text they search for.
+const translate = (key: string): string =>
+  key === 'palette.commandToggleStreamer' ? 'Toggle streamer mode' : key;
+
+
 function host(name: string, extra: Partial<HostDto> = {}): HostDto {
   return {
     name,
@@ -30,86 +36,87 @@ describe('paletteItems — filter & sections', () => {
   const sessions = [session(1, 'web-1', 'terminal'), session(2, 'db-1', 'sftp')];
 
   it('navigator lists sessions first, then hosts, then commands', () => {
-    const items = paletteItems('navigate', hosts, sessions, '');
+    const items = paletteItems('navigate', hosts, sessions, '', translate);
     expect(items.map((i) => i.kind)).toEqual(['session', 'session', 'host', 'host', 'host', 'command']);
   });
 
   it('matches the streamer command by its label, in the navigator only', () => {
-    const toggle = { kind: 'command', id: 'toggle-streamer', label: 'Toggle streamer mode' };
-    expect(paletteItems('navigate', hosts, sessions, 'streamer')).toEqual([toggle]);
-    expect(paletteItems('navigate', hosts, sessions, 'toggle mode')).toEqual([toggle]);
-    expect(paletteItems('navigate', hosts, sessions, 'web')).not.toContainEqual(toggle);
-    expect(paletteItems('pickHost', hosts, sessions, 'streamer')).toEqual([]);
+    const toggle = { kind: 'command', id: 'toggle-streamer', labelKey: 'palette.commandToggleStreamer' };
+    expect(paletteItems('navigate', hosts, sessions, 'streamer', translate)).toEqual([toggle]);
+    expect(paletteItems('navigate', hosts, sessions, 'toggle mode', translate)).toEqual([toggle]);
+    expect(paletteItems('navigate', hosts, sessions, 'web', translate)).not.toContainEqual(toggle);
+    expect(paletteItems('pickHost', hosts, sessions, 'streamer', translate)).toEqual([]);
   });
 
   it('picker lists only hosts', () => {
-    const items = paletteItems('pickHost', hosts, sessions, '');
+    const items = paletteItems('pickHost', hosts, sessions, '', translate);
     expect(items.every((i) => i.kind === 'host')).toBe(true);
     expect(items).toHaveLength(3);
   });
 
   it('filters hosts by name, hostname, user and tags', () => {
-    expect(paletteItems('pickHost', hosts, [], 'web').map((i) => i.kind === 'host' && i.host.name))
+    expect(paletteItems('pickHost', hosts, [], 'web', translate).map((i) => i.kind === 'host' && i.host.name))
       .toEqual(['web-1', 'web-2']);
-    expect(paletteItems('pickHost', hosts, [], 'root')).toHaveLength(1); // db-1 by user
-    expect(paletteItems('pickHost', hosts, [], 'prod')).toHaveLength(1); // web-1 by tag
-    expect(paletteItems('pickHost', hosts, [], 'example.com')).toHaveLength(3); // hostname
+    expect(paletteItems('pickHost', hosts, [], 'root', translate)).toHaveLength(1); // db-1 by user
+    expect(paletteItems('pickHost', hosts, [], 'prod', translate)).toHaveLength(1); // web-1 by tag
+    expect(paletteItems('pickHost', hosts, [], 'example.com', translate)).toHaveLength(3); // hostname
   });
 
   it('requires every whitespace-separated token to match (AND)', () => {
-    expect(paletteItems('pickHost', hosts, [], 'web prod').map((i) => i.kind === 'host' && i.host.name))
+    expect(paletteItems('pickHost', hosts, [], 'web prod', translate).map((i) => i.kind === 'host' && i.host.name))
       .toEqual(['web-1']);
-    expect(paletteItems('pickHost', hosts, [], 'web root')).toHaveLength(0);
+    expect(paletteItems('pickHost', hosts, [], 'web root', translate)).toHaveLength(0);
   });
 
   it('filters sessions by host name and kind in the navigator', () => {
-    expect(paletteItems('navigate', [], sessions, 'sftp').map((i) => i.kind === 'session' && i.session.id))
+    expect(paletteItems('navigate', [], sessions, 'sftp', translate).map((i) => i.kind === 'session' && i.session.id))
       .toEqual([2]);
-    expect(paletteItems('navigate', [], sessions, 'web')).toHaveLength(1);
+    expect(paletteItems('navigate', [], sessions, 'web', translate)).toHaveLength(1);
   });
 
   it('an empty query keeps everything', () => {
-    expect(paletteItems('navigate', hosts, sessions, '   ')).toHaveLength(6);
+    expect(paletteItems('navigate', hosts, sessions, '   ', translate)).toHaveLength(6);
   });
 
   it('lists a shared host name once, as its first host, whatever the query', () => {
     const twins = [host('web-1'), host('web-1', { hostname: 'twin.example.com' })];
-    expect(paletteItems('pickHost', twins, [], '')).toEqual([{ kind: 'host', host: twins[0] }]);
-    expect(paletteItems('navigate', twins, [], 'twin')).toHaveLength(0);
+    expect(paletteItems('pickHost', twins, [], '', translate)).toEqual([{ kind: 'host', host: twins[0] }]);
+    expect(paletteItems('navigate', twins, [], 'twin', translate)).toHaveLength(0);
   });
 });
 
 describe('paletteSignature — stable across volatile updates', () => {
   it('is identical when only a session status changes (no spurious highlight reset)', () => {
-    const connecting = paletteItems('navigate', [host('web-1')], [session(1, 'web-1')], '');
+    const connecting = paletteItems('navigate', [host('web-1')], [session(1, 'web-1')], '', translate);
     const connected = paletteItems(
       'navigate',
       [host('web-1')],
       [{ ...session(1, 'web-1'), status: 'connected' }],
-      ''
+      '',
+      translate
     );
     expect(paletteSignature(connecting)).toBe(paletteSignature(connected));
   });
 
   it('changes when a row is added, removed, or reordered', () => {
-    const base = paletteItems('navigate', [host('web-1'), host('web-2')], [], '');
+    const base = paletteItems('navigate', [host('web-1'), host('web-2')], [], '', translate);
     expect(paletteSignature(base)).not.toBe(
-      paletteSignature(paletteItems('navigate', [host('web-1')], [], ''))
+      paletteSignature(paletteItems('navigate', [host('web-1')], [], '', translate))
     );
     expect(paletteSignature(base)).not.toBe(
-      paletteSignature(paletteItems('navigate', [host('web-2'), host('web-1')], [], ''))
+      paletteSignature(paletteItems('navigate', [host('web-2'), host('web-1')], [], '', translate))
     );
   });
 
   it('changes when a session row appears', () => {
-    const withoutSession = paletteItems('navigate', [host('web-1')], [], '');
-    const withSession = paletteItems('navigate', [host('web-1')], [session(1, 'web-1')], '');
+    const withoutSession = paletteItems('navigate', [host('web-1')], [], '', translate);
+    const withSession = paletteItems('navigate', [host('web-1')], [session(1, 'web-1')], '', translate);
     expect(paletteSignature(withoutSession)).not.toBe(paletteSignature(withSession));
   });
 
   it('changes when the query drops the command row', () => {
-    const all = paletteItems('navigate', [host('web-1')], [], '');
-    const hostOnly = paletteItems('navigate', [host('web-1')], [], 'web');
+    const all = paletteItems('navigate', [host('web-1')], [], '', translate);
+    const hostOnly = paletteItems('navigate', [host('web-1')], [], 'web', translate);
     expect(paletteSignature(all)).toBe(`h:web-1\u0000c:toggle-streamer`);
     expect(paletteSignature(hostOnly)).toBe('h:web-1');
   });

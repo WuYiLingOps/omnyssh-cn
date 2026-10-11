@@ -8,6 +8,7 @@
   // written, so only Delete stays manual-only.
   import { onDestroy, tick } from 'svelte';
   import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import type { HostDto, HostInputDto } from '$lib/bindings';
   import { Surface, Chip, StatusDot, Icon, Button, statusToken } from '$lib/theme';
   import {
@@ -20,6 +21,8 @@
     forwardListen,
     forwardTarget,
     QUICK_ACTIONS,
+    type CardService,
+    type DetailText,
     type ServerCard
   } from './serverCard';
   import { dashboardView, type CardSort } from '$lib/stores/dashboardView';
@@ -85,10 +88,10 @@
   let viewPanel = $state<HTMLElement>();
   const viewChanged = $derived($dashboardView.groupByTag || $dashboardView.sort !== 'custom');
 
-  const SORTS: { id: CardSort; label: string }[] = [
-    { id: 'custom', label: 'Custom' },
-    { id: 'name', label: 'Name' },
-    { id: 'status', label: 'Status' }
+  const SORTS: { id: CardSort; labelKey: string }[] = [
+    { id: 'custom', labelKey: 'dashboard.sortCustom' },
+    { id: 'name', labelKey: 'dashboard.sortName' },
+    { id: 'status', labelKey: 'dashboard.sortStatus' }
   ];
 
   // Radio group keys: arrows pick the previous/next option and move focus with it.
@@ -232,7 +235,11 @@
 
   function commitMove(run: ServerCard[], from: number, to: number): void {
     dashboardView.setOrder(moveCard(onScreen($serverCards), run, from, to, keyOf));
-    announcement = `${run[from].host.name} moved to position ${to + 1} of ${run.length}`;
+    announcement = String(
+      $t('dashboard.moved', {
+        values: { name: run[from].host.name, position: to + 1, total: run.length }
+      })
+    );
   }
 
   // Keyboard reorder on the grip; focus follows the card to its new place.
@@ -265,6 +272,12 @@
   }
 
   const message = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
+  // Resolve a card's service chip: the kind's display name and, when the quick scan
+  // reported container counts, its detail — both dictionary keys (see `serverCard.ts`).
+  const serviceName = (s: CardService): string => $t(s.nameKey);
+  const detailText = (d: DetailText): string =>
+    $t(d.key, d.values ? { values: d.values } : undefined);
 
   // Force an immediate metric poll of every host (tech-gui.md §4.2), shared by the
   // refresh button and the `r` hotkey (mirrors the TUI). The command returns before the
@@ -332,7 +345,7 @@
     // Adding: refuse a name already taken (a save would silently overwrite it). An
     // edit keeps its name (the name field is immutable, §4.1), so it can't collide.
     if (!previousName && get(hosts).some((h) => h.name === input.name)) {
-      throw new Error(`A host named "${input.name}" already exists`);
+      throw new Error(String($t('dashboard.nameExists', { values: { name: input.name } })));
     }
     await saveHost(input);
     await reloadHosts();
@@ -401,7 +414,7 @@
 
 <section class="min-h-full px-6 pb-8 pt-3">
   <div class="mb-5 flex items-center gap-3">
-    <h1 class="text-lg font-semibold tracking-tight">Dashboard</h1>
+    <h1 class="text-lg font-semibold tracking-tight">{$t('dashboard.title')}</h1>
     <div class="ml-auto flex items-center gap-2">
       <!-- Host search: a round toggle that slides a live filter field out to its left. -->
       <div class="flex items-center">
@@ -409,8 +422,8 @@
           bind:this={searchInput}
           bind:value={query}
           type="text"
-          placeholder="Search hosts…"
-          aria-label="Search hosts"
+          placeholder={$t('dashboard.searchPlaceholder')}
+          aria-label={$t('dashboard.search')}
           disabled={!searchOpen}
           class="{search} {searchOpen
             ? 'mr-2 w-52 px-3 opacity-100'
@@ -422,8 +435,8 @@
         <button
           type="button"
           class={roundBtn}
-          title={searchOpen ? 'Close search' : 'Search hosts'}
-          aria-label={searchOpen ? 'Close search' : 'Search hosts'}
+          title={searchOpen ? $t('dashboard.closeSearch') : $t('dashboard.search')}
+          aria-label={searchOpen ? $t('dashboard.closeSearch') : $t('dashboard.search')}
           aria-expanded={searchOpen}
           onclick={toggleSearch}
         >
@@ -435,8 +448,8 @@
           bind:this={viewButton}
           type="button"
           class="{roundBtn} relative"
-          title="View options"
-          aria-label="View options"
+          title={$t('dashboard.viewOptions')}
+          aria-label={$t('dashboard.viewOptions')}
           aria-haspopup="dialog"
           aria-expanded={viewOpen}
           onclick={() => (viewOpen ? closeView(true) : openView())}
@@ -450,7 +463,7 @@
           <div
             bind:this={viewPanel}
             role="dialog"
-            aria-label="View options"
+            aria-label={$t('dashboard.viewOptions')}
             tabindex="-1"
             class="absolute right-0 top-10 z-20 w-72 space-y-4 rounded-2xl border border-default bg-surface-raised p-4 shadow-soft"
             onfocusout={(e) => {
@@ -460,15 +473,15 @@
           >
             <div class="flex items-center justify-between gap-4">
               <div class="min-w-0">
-                <p class="text-sm">Group by tag</p>
-                <p class="text-xs text-muted">Each host goes under its first tag.</p>
+                <p class="text-sm">{$t('dashboard.groupByTag')}</p>
+                <p class="text-xs text-muted">{$t('dashboard.groupByTagHint')}</p>
               </div>
               <button
                 type="button"
                 role="switch"
                 aria-checked={$dashboardView.groupByTag}
-                aria-label="Group by tag"
-                title="Group by tag (G)"
+                aria-label={$t('dashboard.groupByTag')}
+                title={$t('dashboard.groupByTagTitle')}
                 onclick={() => dashboardView.toggleGroupByTag()}
                 class="relative h-6 w-11 shrink-0 rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus {$dashboardView.groupByTag
                   ? 'bg-accent'
@@ -482,7 +495,7 @@
               </button>
             </div>
             <div class="border-t border-default pt-4">
-              <p id="dashboard-sort-label" class="mb-2 text-sm">Sort</p>
+              <p id="dashboard-sort-label" class="mb-2 text-sm">{$t('dashboard.sort')}</p>
               <div
                 role="radiogroup"
                 aria-labelledby="dashboard-sort-label"
@@ -500,11 +513,11 @@
                     class="{seg} flex-1 {segState(on)}"
                     onclick={() => dashboardView.setSort(option.id)}
                   >
-                    {option.label}
+                    {$t(option.labelKey)}
                   </button>
                 {/each}
               </div>
-              <p class="mt-2 text-xs text-muted">Drag a card's handle to set your own order.</p>
+              <p class="mt-2 text-xs text-muted">{$t('dashboard.reorderHint')}</p>
             </div>
           </div>
         {/if}
@@ -514,8 +527,8 @@
       <button
         type="button"
         class="{roundBtn} disabled:opacity-60"
-        title="Refresh metrics (R)"
-        aria-label="Refresh metrics"
+        title={$t('dashboard.refreshTitle')}
+        aria-label={$t('dashboard.refresh')}
         disabled={refreshing}
         onclick={() => refresh()}
       >
@@ -525,30 +538,34 @@
       </button>
       <button type="button" class={pill} onclick={() => (dialog = { kind: 'add' })}>
         <Icon name="plus" size={13} />
-        Add host
+        {$t('dashboard.addHost')}
       </button>
     </div>
   </div>
 
   {#if $serverCards.length === 0}
     <div class="flex flex-col items-center justify-center gap-2 py-20 text-center">
-      <p class="font-medium">No servers yet</p>
-      <p class="text-sm text-muted">Add a host, or import one from your SSH config, to see it here.</p>
+      <p class="font-medium">{$t('dashboard.emptyTitle')}</p>
+      <p class="text-sm text-muted">{$t('dashboard.emptyHint')}</p>
       <button type="button" class="{pill} mt-2" onclick={() => (dialog = { kind: 'add' })}>
         <Icon name="plus" size={13} />
-        Add host
+        {$t('dashboard.addHost')}
       </button>
     </div>
   {:else if visibleCards.length === 0}
     <div class="flex flex-col items-center justify-center gap-2 py-20 text-center">
-      <p class="text-sm text-muted">No hosts match “{query}”.</p>
+      <p class="text-sm text-muted">{$t('dashboard.noMatches', { values: { query } })}</p>
     </div>
   {:else if $dashboardView.groupByTag}
     <div class="flex flex-col gap-6">
       {#each groups as group, g (group.tag ?? '')}
         {@const key = group.tag ?? ''}
         {@const open = searching || !$dashboardView.collapsed.includes(key)}
-        <section aria-label="{group.tag ?? 'Untagged'} hosts">
+        <section
+          aria-label={group.tag === null
+            ? $t('dashboard.untaggedHosts')
+            : $t('dashboard.taggedHosts', { values: { tag: group.tag } })}
+        >
           <h2 class="mb-3">
             <button
               type="button"
@@ -562,7 +579,7 @@
                 <Icon name="chevron" size={14} />
               </span>
               <span class="truncate text-sm font-semibold {group.tag === null ? 'italic text-muted' : ''}">
-                {group.tag ?? 'Untagged'}
+                {group.tag ?? $t('dashboard.untagged')}
               </span>
               <span class="text-xs tabular-nums text-faint">{group.cards.length}</span>
               <span class="flex-1 border-t border-default"></span>
@@ -589,7 +606,7 @@
   {/if}
 
   <p id="dashboard-reorder-help" class="sr-only">
-    Drag, or press the arrow keys, Home or End, to move the card.
+    {$t('dashboard.reorderHelp')}
   </p>
   <p class="sr-only" aria-live="polite">{announcement}</p>
   {#if marker}
@@ -625,9 +642,9 @@
               {#if card.host.source === 'sshConfig'}
                 <span
                   class="shrink-0 rounded-full border border-default px-1.5 py-0.5 text-[10px] text-faint"
-                  title="Imported from ~/.ssh/config — editing saves your own copy, which takes priority"
+                  title={$t('dashboard.sshConfigTitle')}
                 >
-                  ssh config
+                  {$t('dashboard.sshConfigBadge')}
                 </span>
               {/if}
               <!-- Auth-state reflection (tech-gui.md §4.2): a shield once password login
@@ -637,8 +654,8 @@
                 <span
                   class="inline-flex shrink-0 items-center rounded-full border border-default p-1 text-faint"
                   role="img"
-                  title="Key login only"
-                  aria-label="Key login only"
+                  title={$t('dashboard.keyOnly')}
+                  aria-label={$t('dashboard.keyOnly')}
                 >
                   <Icon name="shield" size={10} />
                 </span>
@@ -646,18 +663,18 @@
                 <button
                   type="button"
                   class="inline-flex shrink-0 items-center gap-1 rounded-full border border-status-warn px-1.5 py-0.5 text-[10px] text-status-warn hover:bg-surface-inset"
-                  title="Key login works, but the server still accepts passwords. Turn off password login…"
+                  title={$t('dashboard.passwordOnTitle')}
                   onclick={() => (dialog = { kind: 'keySetup', host: card.host, rerun: true })}
                 >
-                  Password on
+                  {$t('dashboard.passwordOn')}
                 </button>
               {:else if card.host.hasKey}
                 <span
                   class="inline-flex shrink-0 items-center gap-1 rounded-full border border-default px-1.5 py-0.5 text-[10px] text-faint"
-                  title="Key authentication configured"
+                  title={$t('dashboard.keyConfigured')}
                 >
                   <Icon name="key" size={10} />
-                  key
+                  {$t('dashboard.keyBadge')}
                 </span>
               {/if}
             </div>
@@ -672,8 +689,8 @@
             class="{iconBtn} -mr-2 -mt-1 ml-auto shrink-0 touch-none focus-visible:opacity-100 group-hover/card:opacity-100 {lift
               ? 'cursor-grabbing opacity-100'
               : 'cursor-grab opacity-0'}"
-            title="Drag to reorder"
-            aria-label="Move {card.host.name}"
+            title={$t('dashboard.dragToReorder')}
+            aria-label={$t('dashboard.moveHost', { values: { name: card.host.name } })}
             aria-describedby="dashboard-reorder-help"
             onpointerdown={(e) => gripDown(e, run, i, grid)}
             onpointermove={gripMove}
@@ -687,14 +704,17 @@
         </div>
         <div class="flex flex-wrap items-center gap-1.5">
           {#each QUICK_ACTIONS as action (action.id)}
+            {@const actionLabel = $t(action.labelKey)}
             <button
               type="button"
               class={pill}
-              title="{action.label} on {card.host.name}"
+              title={$t('dashboard.quickActionOn', {
+                values: { action: actionLabel, name: card.host.name }
+              })}
               onclick={() => spawnSession(action.kind, card.host.name)}
             >
               <Icon name={action.kind} size={13} />
-              {action.label}
+              {actionLabel}
             </button>
           {/each}
           <!-- Key setup stays manual-only even though edit no longer is: it records
@@ -705,8 +725,8 @@
             <button
               type="button"
               class={iconBtn}
-              title="Set up an SSH key for {card.host.name}"
-              aria-label="Set up an SSH key for {card.host.name}"
+              title={$t('dashboard.setupKeyFor', { values: { name: card.host.name } })}
+              aria-label={$t('dashboard.setupKeyFor', { values: { name: card.host.name } })}
               onclick={() => (dialog = { kind: 'keySetup', host: card.host, rerun: false })}
             >
               <Icon name="key" size={14} />
@@ -718,8 +738,8 @@
           <button
             type="button"
             class={iconBtn}
-            title="Edit {card.host.name}"
-            aria-label="Edit {card.host.name}"
+            title={$t('dashboard.editHost', { values: { name: card.host.name } })}
+            aria-label={$t('dashboard.editHost', { values: { name: card.host.name } })}
             onclick={() => (dialog = { kind: 'edit', host: card.host })}
           >
             <Icon name="edit" size={14} />
@@ -728,8 +748,8 @@
             <button
               type="button"
               class={iconBtn}
-              title="Delete {card.host.name}"
-              aria-label="Delete {card.host.name}"
+              title={$t('dashboard.deleteHost', { values: { name: card.host.name } })}
+              aria-label={$t('dashboard.deleteHost', { values: { name: card.host.name } })}
               onclick={() => (dialog = { kind: 'delete', host: card.host })}
             >
               <Icon name="trash" size={14} />
@@ -744,15 +764,19 @@
           class="rounded-lg bg-surface-inset px-3 py-3 text-center text-xs"
           style="color: {statusToken(card.overall)};"
         >
-          {card.reachability}{card.host.monitorPort ? ` · port ${card.host.monitorPort}` : ''}
+          {$t(`dashboard.${card.reachability}`)}{card.host.monitorPort
+            ? $t('dashboard.portSuffix', { values: { port: card.host.monitorPort } })
+            : ''}
         </div>
       {:else if card.offline}
-        <div class="rounded-lg bg-surface-inset px-3 py-3 text-center text-xs text-faint">offline</div>
+        <div class="rounded-lg bg-surface-inset px-3 py-3 text-center text-xs text-faint">
+          {$t('dashboard.offline')}
+        </div>
       {:else}
         <div class="space-y-2">
-          {#each card.metricRows as row (row.label)}
+          {#each card.metricRows as row (row.labelKey)}
             <div class="flex items-center gap-3">
-              <span class="w-9 shrink-0 text-[11px] uppercase tracking-wider text-faint">{row.label}</span>
+              <span class="w-9 shrink-0 text-[11px] uppercase tracking-wider text-faint">{$t(row.labelKey)}</span>
               <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-inset">
                 {#if row.percent != null}
                   <div
@@ -774,7 +798,7 @@
 
         {#if card.uptime || card.osInfo}
           <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
-            {#if card.uptime}<span>up {card.uptime}</span>{/if}
+            {#if card.uptime}<span>{$t('dashboard.up', { values: { uptime: card.uptime } })}</span>{/if}
             {#if card.uptime && card.osInfo}<span class="text-faint">·</span>{/if}
             {#if card.osInfo}<span class="min-w-0 truncate">{card.osInfo}</span>{/if}
           </div>
@@ -796,7 +820,7 @@
            Selectable: a refused host key comes with a command to copy. -->
       {#if card.failure}
         <p class="select-text break-words text-xs text-status-crit">
-          {$streamerMode ? 'Details hidden in streamer mode' : card.failure}
+          {$streamerMode ? $t('dashboard.detailsHidden') : card.failure}
         </p>
       {/if}
 
@@ -804,11 +828,11 @@
       {#if card.detectedServices.length}
         <div class="flex flex-wrap gap-1.5">
           {#each card.detectedServices as service (service.kind)}
-            <Chip>{service.detail ? `${service.name} · ${service.detail}` : service.name}</Chip>
+            <Chip>{serviceName(service)}{service.detail ? ` · ${detailText(service.detail)}` : ''}</Chip>
           {/each}
         </div>
       {:else if card.servicesError}
-        <div class="text-xs text-faint">Service scan unavailable</div>
+        <div class="text-xs text-faint">{$t('dashboard.serviceScanUnavailable')}</div>
       {/if}
 
       <!-- Port forwarding: one tunnel per host carries every forward. -->
@@ -817,25 +841,35 @@
         <div class="space-y-2 border-t border-default pt-3">
           <div class="flex items-center gap-2">
             <span class="text-faint"><Icon name="tunnel" size={13} /></span>
-            <StatusDot status={tunnel.dot} size={7} label="{card.host.name} tunnel {tunnel.label}" />
-            <span class="text-xs text-muted">{tunnel.label}</span>
+            <StatusDot status={tunnel.dot} size={7} label="{card.host.name} tunnel {$t(tunnel.labelKey)}" />
+            <span class="text-xs text-muted">{$t(tunnel.labelKey)}</span>
             {#if tunnel.autostart}
               <span
                 class="shrink-0 rounded-full border border-default px-1.5 py-0.5 text-[10px] text-faint"
-                title="Starts when OmnySSH opens"
+                title={$t('dashboard.tunnelAutoTitle')}
               >
-                auto
+                {$t('dashboard.tunnelAuto')}
               </span>
             {/if}
             <button
               type="button"
               class="{pill} ml-auto"
-              title="{tunnel.running ? 'Stop' : 'Start'} the tunnel to {card.host.name}"
-              aria-label="{tunnel.running ? 'Stop' : 'Start'} the tunnel to {card.host.name}"
+              title={$t('dashboard.tunnelToggle', {
+                values: {
+                  action: tunnel.running ? $t('dashboard.tunnelStop') : $t('dashboard.tunnelStart'),
+                  name: card.host.name
+                }
+              })}
+              aria-label={$t('dashboard.tunnelToggle', {
+                values: {
+                  action: tunnel.running ? $t('dashboard.tunnelStop') : $t('dashboard.tunnelStart'),
+                  name: card.host.name
+                }
+              })}
               onclick={() => toggleTunnel(card.host.name, tunnel.running)}
             >
               <Icon name={tunnel.running ? 'close' : 'play'} size={12} />
-              {tunnel.running ? 'Stop' : 'Start'}
+              {tunnel.running ? $t('dashboard.tunnelStop') : $t('dashboard.tunnelStart')}
             </button>
           </div>
           <ul class="space-y-1">
@@ -850,7 +884,7 @@
           <!-- The reason names hosts and addresses, so streamer mode keeps it off screen. -->
           {#if tunnel.message}
             <p class="break-words text-xs {tunnel.running ? 'text-faint' : 'text-status-crit'}">
-              {$streamerMode ? 'Details hidden in streamer mode' : tunnel.message}
+              {$streamerMode ? $t('dashboard.detailsHidden') : tunnel.message}
             </p>
           {/if}
         </div>
@@ -881,16 +915,19 @@
   />
 {:else if dialog?.kind === 'delete'}
   {@const host = dialog.host}
-  <Modal label="Delete host" onClose={() => (dialog = null)}>
+  <Modal label={$t('dashboard.deleteTitle')} onClose={() => (dialog = null)}>
     <div class="space-y-3 px-5 py-4">
-      <h2 class="text-sm font-semibold">Delete host</h2>
+      <h2 class="text-sm font-semibold">{$t('dashboard.deleteTitle')}</h2>
       <p class="text-sm text-muted">
-        Delete “{host.name}”? This removes it from <span class="font-mono">hosts.toml</span>. If
-        your SSH config defines the same name, it comes back as an import.
+        {$t('dashboard.deleteBody', { values: { name: host.name } })} <span class="font-mono"
+          >hosts.toml</span
+        >{$t('dashboard.deleteBodyContinue')}
       </p>
       <div class="flex justify-end gap-2 pt-1">
-        <Button variant="ghost" onclick={() => (dialog = null)}>Cancel</Button>
-        <Button variant="primary" onclick={() => confirmDelete(host.name)}>Delete</Button>
+        <Button variant="ghost" onclick={() => (dialog = null)}>{$t('hostEditor.cancel')}</Button>
+        <Button variant="primary" onclick={() => confirmDelete(host.name)}
+          >{$t('dashboard.deleteConfirm')}</Button
+        >
       </div>
     </div>
   </Modal>

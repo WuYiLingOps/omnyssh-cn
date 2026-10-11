@@ -3,13 +3,21 @@
 //! everything else and routes both through the page instead.
 
 use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::{AppHandle, Wry};
+use tauri::{AppHandle, Manager, Wry};
+
+use crate::i18n;
 
 pub const QUIT_ID: &str = "app-quit";
 pub const CLOSE_WINDOW_ID: &str = "app-close-window";
 
 /// No item claims ⌘W, so the page gets it and closes the active tab.
 pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
+    // The shell keeps its language in managed state; fall back to the config for a
+    // call that arrives before `manage` (unlikely but harmless).
+    let lang = app
+        .try_state::<crate::state::GuiState>()
+        .map_or_else(i18n::current_lang, |state| state.language());
+    let strings = i18n::strings(lang);
     let info = app.package_info();
     let about = AboutMetadata {
         name: Some(info.name.clone()),
@@ -33,18 +41,18 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &PredefinedMenuItem::hide_others(app, None)?,
             &PredefinedMenuItem::show_all(app, None)?,
             &separator()?,
-            &MenuItem::with_id(app, QUIT_ID, "Quit OmnySSH", true, Some("CmdOrCtrl+Q"))?,
+            &MenuItem::with_id(app, QUIT_ID, strings.quit, true, Some("CmdOrCtrl+Q"))?,
         ],
     )?;
     // Closing goes through `CloseRequested`, so the tray or the page's question still apply.
     let file = Submenu::with_items(
         app,
-        "File",
+        strings.file_menu,
         true,
         &[&MenuItem::with_id(
             app,
             CLOSE_WINDOW_ID,
-            "Close Window",
+            strings.close_window,
             true,
             Some("CmdOrCtrl+Shift+W"),
         )?],

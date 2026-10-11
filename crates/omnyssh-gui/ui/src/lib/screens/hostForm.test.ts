@@ -27,14 +27,14 @@ describe('formToInput — mirrors the TUI to_host', () => {
   it('rejects an empty name', () => {
     expect(formToInput(fields({ name: '  ', hostname: 'h' }))).toEqual({
       ok: false,
-      error: 'Name cannot be empty'
+      error: { key: 'hostEditor.errNameEmpty' }
     });
   });
 
   it('rejects an empty hostname', () => {
     expect(formToInput(fields({ name: 'n', hostname: '  ' }))).toEqual({
       ok: false,
-      error: 'Hostname / IP cannot be empty'
+      error: { key: 'hostEditor.errHostnameEmpty' }
     });
   });
 
@@ -67,10 +67,7 @@ describe('formToInput — mirrors the TUI to_host', () => {
     'rejects an invalid port %s',
     (port) => {
       const r = formToInput(fields({ name: 'n', hostname: 'h', port }));
-      expect(r).toEqual({
-        ok: false,
-        error: `Port must be a number between 1 and 65535, got '${port}'`
-      });
+      expect(r).toEqual({ ok: false, error: { key: 'hostEditor.errPortRange', values: { value: port } } });
     }
   );
 
@@ -190,7 +187,7 @@ describe('formToInput — monitoring mode', () => {
         monitoring: 'tcpPort',
         monitorPort
       });
-      expect(result.ok).toBe(false);
+      expect(result).toEqual({ ok: false, error: { key: 'hostEditor.errProbePortRange', values: { value: monitorPort } } });
     }
   });
 
@@ -241,16 +238,36 @@ describe('formToInput — port forwarding', () => {
   });
 
   it('names the row and the problem', () => {
-    const cases: [ReturnType<typeof row>, string][] = [
-      [row('0', 'localhost', '80'), 'Forward 1: local port'],
-      [row('::1:8080', 'localhost', '80'), 'Forward 1: put an IPv6 address in brackets'],
-      [row('8080', '  ', '80'), 'Forward 1: enter the host'],
-      [row('8080', 'local host', '80'), 'Forward 1: enter the host'],
-      [row('8080', 'localhost', '70000'), 'Forward 1: remote port']
+    const cases: [ReturnType<typeof row>, Record<string, unknown>][] = [
+      [
+        row('0', 'localhost', '80'),
+        {
+          key: 'hostEditor.errForward',
+          values: { n: '1' },
+          detail: { key: 'hostEditor.errLocalPort', values: { value: '0' } }
+        }
+      ],
+      [
+        row('::1:8080', 'localhost', '80'),
+        { key: 'hostEditor.errForward', values: { n: '1' }, detail: { key: 'hostEditor.errIpv6Brackets' } }
+      ],
+      [row('8080', '  ', '80'), { key: 'hostEditor.errForward', values: { n: '1' }, detail: { key: 'hostEditor.errForwardHost' } }],
+      [
+        row('8080', 'local host', '80'),
+        { key: 'hostEditor.errForward', values: { n: '1' }, detail: { key: 'hostEditor.errForwardHost' } }
+      ],
+      [
+        row('8080', 'localhost', '70000'),
+        {
+          key: 'hostEditor.errForward',
+          values: { n: '1' },
+          detail: { key: 'hostEditor.errForwardRemotePort', values: { value: '70000' } }
+        }
+      ]
     ];
-    for (const [bad, message] of cases) {
+    for (const [bad, error] of cases) {
       const r = formToInput(fields({ ...base, forwards: [bad] }));
-      expect(r.ok ? '' : r.error).toContain(message);
+      expect(r.ok ? null : r.error).toEqual(error);
     }
   });
 
@@ -258,7 +275,10 @@ describe('formToInput — port forwarding', () => {
     const r = formToInput(
       fields({ ...base, forwards: [row('9443', 'localhost', '1'), row('localhost:9443', 'localhost', '2')] })
     );
-    expect(r).toEqual({ ok: false, error: 'Forward 2 listens on the same port as forward 1' });
+    expect(r).toEqual({
+      ok: false,
+      error: { key: 'hostEditor.errForwardClash', values: { n: '2', other: '1' } }
+    });
   });
 
   it('drops the autostart flag along with the last forward', () => {
@@ -282,5 +302,24 @@ describe('formToInput — port forwarding', () => {
       { bindAddress: undefined, bindPort: 9443, remoteHost: '127.0.0.1', remotePort: 9443 },
       { bindAddress: '::1', bindPort: 8080, remoteHost: 'db', remotePort: 5432 }
     ]);
+  });
+});
+
+describe('formErrorMessage', () => {
+  it('resolves a key with no values to the plain message', async () => {
+    const { formErrorMessage } = await import('./hostForm');
+    const translate = (key: string) => `[${key}]`;
+    expect(formErrorMessage({ key: 'hostEditor.errNameEmpty' }, translate)).toBe('[hostEditor.errNameEmpty]');
+  });
+
+  it('passes values through to the translator', async () => {
+    const { formErrorMessage } = await import('./hostForm');
+    const seen: unknown[] = [];
+    const translate = (key: string, options?: { values?: Record<string, string> }) => {
+      seen.push([key, options?.values]);
+      return 'x';
+    };
+    formErrorMessage({ key: 'hostEditor.errPortRange', values: { value: 'abc' } }, translate);
+    expect(seen).toEqual([['hostEditor.errPortRange', { value: 'abc' }]]);
   });
 });

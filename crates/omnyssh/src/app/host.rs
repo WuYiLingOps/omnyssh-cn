@@ -12,25 +12,29 @@ use omnyssh_core::ssh::tunnel::LocalForward;
 // Host form (used in Add / Edit popups)
 // ---------------------------------------------------------------------------
 
-/// Labels for every field in the host add/edit form.
-pub const FORM_FIELD_LABELS: &[&str] = &[
-    "Name",
-    "Hostname / IP",
-    "User",
-    "Port",
-    "Identity File",
-    "Password (login, optional)",
-    "Tags (comma-sep)",
-    "Notes",
-    "Monitoring (ssh | tcp | tcp:PORT)",
-    "Port forwards (port:host:hostport, ...)",
-    "Start tunnel on launch (y/n)",
+/// Labels for every field in the host add/edit form, in `lang`.
+pub fn host_form_field_labels(lang: crate::i18n::Lang) -> Vec<&'static str> {
+    use crate::i18n::{t, Key};
+    let mut labels = vec![
+        t(lang, Key::FormName),
+        t(lang, Key::FormHostname),
+        t(lang, Key::FormUser),
+        t(lang, Key::FormPort),
+        t(lang, Key::FormIdentityFile),
+        t(lang, Key::FormPassword),
+        t(lang, Key::FormTags),
+        t(lang, Key::FormNotes),
+        t(lang, Key::FormMonitoring),
+        t(lang, Key::FormForwards),
+        t(lang, Key::FormStartTunnel),
+    ];
     #[cfg(unix)]
-    "Forward SSH agent (y/n)",
+    labels.push(t(lang, Key::FormForwardAgent));
     // Kept so a hosts.toml shared with another machine round-trips it.
     #[cfg(not(unix))]
-    "Forward SSH agent (y/n, not on Windows yet)",
-];
+    labels.push(t(lang, Key::FormForwardAgentWindows));
+    labels
+}
 
 /// Whether an edit changed anything a running poller reads. Everything else on
 /// the form — tags, notes — is display-only, and restarting the pool for it drops
@@ -63,7 +67,10 @@ fn monitoring_value(host: &Host) -> String {
 
 /// Parses the monitoring field: empty or `ssh` keeps the SSH poller, `tcp`
 /// probes the host's SSH port, `tcp:PORT` probes another one.
-fn parse_monitoring(value: &str) -> Result<(MonitorMode, Option<u16>), String> {
+fn parse_monitoring(
+    lang: crate::i18n::Lang,
+    value: &str,
+) -> Result<(MonitorMode, Option<u16>), String> {
     match value {
         "" | "ssh" => Ok((MonitorMode::Ssh, None)),
         "tcp" => Ok((MonitorMode::TcpPort, None)),
@@ -72,7 +79,7 @@ fn parse_monitoring(value: &str) -> Result<(MonitorMode, Option<u16>), String> {
             .and_then(|p| p.parse::<u16>().ok())
             .filter(|&p| p != 0)
             .map(|p| (MonitorMode::TcpPort, Some(p)))
-            .ok_or_else(|| format!("Monitoring must be 'ssh', 'tcp' or 'tcp:PORT', got '{other}'")),
+            .ok_or_else(|| crate::i18n::tf(lang, crate::i18n::Key::ErrMonitoringInvalid, &[other])),
     }
 }
 
@@ -86,21 +93,29 @@ pub fn forwards_value(host: &Host) -> String {
 }
 
 /// Parses the port forwards field: comma-separated `ssh -L` rules.
-fn parse_forwards(value: &str) -> Result<Vec<LocalForward>, String> {
+fn parse_forwards(lang: crate::i18n::Lang, value: &str) -> Result<Vec<LocalForward>, String> {
     let forwards: Vec<LocalForward> = value
         .split(',')
         .map(str::trim)
         .filter(|rule| !rule.is_empty())
-        .map(|rule| rule.parse().map_err(|e| format!("Port forward: {e}")))
+        .map(|rule| {
+            // `e` is a `String`, so `e.to_string()` would be a pointless clone;
+            // `format!` is how the parser's message is folded into the template.
+            #[allow(clippy::useless_format)]
+            rule.parse().map_err(|e: String| {
+                crate::i18n::tf(lang, crate::i18n::Key::ErrPortForward, &[&format!("{e}")])
+            })
+        })
         .collect::<Result<_, _>>()?;
     // Two rules on one local port would fail the whole tunnel when it binds.
     let mut listening = std::collections::HashSet::new();
     for forward in &forwards {
         let address = forward.bind_address.as_deref().unwrap_or("localhost");
         if !listening.insert((address, forward.bind_port)) {
-            return Err(format!(
-                "Port forward: two rules listen on port {}",
-                forward.bind_port
+            return Err(crate::i18n::tf(
+                lang,
+                crate::i18n::Key::ErrPortForwardDupPort,
+                &[&forward.bind_port.to_string()],
             ));
         }
     }
@@ -118,11 +133,15 @@ fn yes_no_value(on: bool) -> &'static str {
 }
 
 /// Parses a y/n field; `label` names it in the error.
-fn parse_yes_no(label: &str, value: &str) -> Result<bool, String> {
+fn parse_yes_no(lang: crate::i18n::Lang, label: &str, value: &str) -> Result<bool, String> {
     match value.trim().to_ascii_lowercase().as_str() {
         "" | "n" | "no" => Ok(false),
         "y" | "yes" => Ok(true),
-        _ => Err(format!("{label} must be y or n, got '{}'", value.trim())),
+        _ => Err(crate::i18n::tf(
+            lang,
+            crate::i18n::Key::ErrYesNoInvalid,
+            &[label, value.trim()],
+        )),
     }
 }
 
@@ -166,7 +185,7 @@ impl FormField {
 /// The host add/edit form, containing all editable fields.
 #[derive(Debug, Clone)]
 pub struct HostForm {
-    /// Parallel to `FORM_FIELD_LABELS`.
+    /// Parallel to `host_form_field_labels`.
     pub fields: Vec<FormField>,
     /// Index of the currently focused field.
     pub focused_field: usize,
@@ -174,9 +193,9 @@ pub struct HostForm {
 
 impl HostForm {
     /// Creates an empty form for adding a new host.
-    pub fn empty() -> Self {
+    pub fn empty(lang: crate::i18n::Lang) -> Self {
         Self {
-            fields: FORM_FIELD_LABELS
+            fields: host_form_field_labels(lang)
                 .iter()
                 .map(|_| FormField::default())
                 .collect(),
@@ -185,8 +204,8 @@ impl HostForm {
     }
 
     /// Creates a form pre-filled from an existing host (for editing).
-    pub fn from_host(host: &Host) -> Self {
-        let mut form = Self::empty();
+    pub fn from_host(host: &Host, lang: crate::i18n::Lang) -> Self {
+        let mut form = Self::empty(lang);
         form.fields[0] = FormField::with_value(&host.name);
         form.fields[1] = FormField::with_value(&host.hostname);
         form.fields[2] = FormField::with_value(&host.user);
@@ -206,15 +225,16 @@ impl HostForm {
     ///
     /// # Errors
     /// Returns a human-readable error string if validation fails.
-    pub fn to_host(&self, source: HostSource) -> Result<Host, String> {
+    pub fn to_host(&self, lang: crate::i18n::Lang, source: HostSource) -> Result<Host, String> {
+        use crate::i18n::{t, Key};
         let name = self.fields[0].value.trim().to_string();
         if name.is_empty() {
-            return Err("Name cannot be empty".to_string());
+            return Err(t(lang, Key::ErrNameEmpty).to_string());
         }
 
         let hostname = self.fields[1].value.trim().to_string();
         if hostname.is_empty() {
-            return Err("Hostname / IP cannot be empty".to_string());
+            return Err(t(lang, Key::ErrHostnameEmpty).to_string());
         }
 
         let user = {
@@ -231,9 +251,10 @@ impl HostForm {
             if v.is_empty() {
                 22u16
             } else {
-                v.parse::<u16>().ok().filter(|&p| p != 0).ok_or_else(|| {
-                    format!("Port must be a number between 1 and 65535, got '{v}'")
-                })?
+                v.parse::<u16>()
+                    .ok()
+                    .filter(|&p| p != 0)
+                    .ok_or_else(|| crate::i18n::tf(lang, Key::ErrPortInvalid, &[v]))?
             }
         };
 
@@ -271,10 +292,12 @@ impl HostForm {
             }
         };
 
-        let (monitoring, monitor_port) = parse_monitoring(self.fields[8].value.trim())?;
-        let local_forwards = parse_forwards(&self.fields[9].value)?;
-        let tunnel_autostart = parse_yes_no("Start tunnel on launch", &self.fields[10].value)?;
-        let forward_agent = parse_yes_no("Forward SSH agent", &self.fields[11].value)?;
+        let (monitoring, monitor_port) = parse_monitoring(lang, self.fields[8].value.trim())?;
+        let local_forwards = parse_forwards(lang, &self.fields[9].value)?;
+        let tunnel_label = t(lang, Key::ErrLabelStartTunnel);
+        let agent_label = t(lang, Key::ErrLabelForwardAgent);
+        let tunnel_autostart = parse_yes_no(lang, tunnel_label, &self.fields[10].value)?;
+        let forward_agent = parse_yes_no(lang, agent_label, &self.fields[11].value)?;
 
         Ok(Host {
             name,
@@ -383,7 +406,12 @@ pub struct GroupHeader {
 }
 
 impl GroupHeader {
-    /// Display name of the section.
+    /// Display name of the section, for tests only.
+    ///
+    /// Production rendering goes through `dashboard::render_group_header`,
+    /// which draws the localized [`crate::i18n::Key::Untagged`] when `label` is
+    /// `None`; tests want a stable token to assert against, hence the literal.
+    #[cfg(test)]
     pub fn title(&self) -> &str {
         self.label.as_deref().unwrap_or("Untagged")
     }
@@ -646,7 +674,7 @@ impl App {
     pub(crate) async fn handle_confirm_form(&mut self) {
         match self.view.host_list.popup.take() {
             Some(HostPopup::Add(form)) => {
-                match form.to_host(HostSource::Manual) {
+                match form.to_host(self.view.lang, HostSource::Manual) {
                     Ok(host) => {
                         let has_password = host.password.is_some();
                         let host_name = host.name.clone();
@@ -680,115 +708,132 @@ impl App {
 
                         // Suggest SSH key setup if host was added with password
                         if has_password {
-                            self.view.status_message = Some(format!(
-                                "Host '{}' added. Press 'Shift+K' to set up SSH key authentication (recommended).",
-                                host_name
+                            self.view.status_message = Some(crate::i18n::tf(
+                                self.view.lang,
+                                crate::i18n::Key::StatusHostAddedWithPassword,
+                                &[&host_name],
                             ));
                         } else {
-                            self.view.status_message = Some("Host added.".to_string());
+                            self.view.status_message = Some(
+                                crate::i18n::t(self.view.lang, crate::i18n::Key::StatusHostAdded)
+                                    .to_string(),
+                            );
                         }
                     }
                     Err(e) => {
                         // Restore popup so the user can correct the input.
                         self.view.host_list.popup = Some(HostPopup::Add(form));
-                        self.view.status_message = Some(format!("Error: {e}"));
+                        self.view.status_message = Some(crate::i18n::tf(
+                            self.view.lang,
+                            crate::i18n::Key::StatusError,
+                            &[&e],
+                        ));
                     }
                 }
             }
 
-            Some(HostPopup::Edit { host_idx, form }) => match form.to_host(HostSource::Manual) {
-                Ok(mut host) => {
-                    let (old_name, _was_ssh_config, before) = {
-                        let mut state = self.state.write().await;
-                        let old_host = state.hosts.get(host_idx);
-                        let old_name = old_host.map(|h| h.name.clone());
-                        let before = old_host.cloned();
-                        let was_ssh_config = old_host
-                            .map(|h| h.source == HostSource::SshConfig)
-                            .unwrap_or(false);
+            Some(HostPopup::Edit { host_idx, form }) => {
+                match form.to_host(self.view.lang, HostSource::Manual) {
+                    Ok(mut host) => {
+                        let (old_name, _was_ssh_config, before) = {
+                            let mut state = self.state.write().await;
+                            let old_host = state.hosts.get(host_idx);
+                            let old_name = old_host.map(|h| h.name.clone());
+                            let before = old_host.cloned();
+                            let was_ssh_config = old_host
+                                .map(|h| h.source == HostSource::SshConfig)
+                                .unwrap_or(false);
 
-                        // ProxyJump has no form field, so carry it over: editing
-                        // an imported host would otherwise drop its bastion and
-                        // the saved copy would try to connect direct.
-                        host.proxy_jump = old_host.and_then(|h| h.proxy_jump.clone());
-                        // Nor has IdentitiesOnly, and losing it brings back a login
-                        // that offers every agent key.
-                        host.identities_only = old_host.is_some_and(|h| h.identities_only);
+                            // ProxyJump has no form field, so carry it over: editing
+                            // an imported host would otherwise drop its bastion and
+                            // the saved copy would try to connect direct.
+                            host.proxy_jump = old_host.and_then(|h| h.proxy_jump.clone());
+                            // Nor has IdentitiesOnly, and losing it brings back a login
+                            // that offers every agent key.
+                            host.identities_only = old_host.is_some_and(|h| h.identities_only);
 
-                        // An import is adopted under the name it was imported by; a copy
-                        // already adopted keeps the one it carries. Dropping it brings the
-                        // import back as a duplicate card, and takes with it the alias any
-                        // other host's `ProxyJump` resolves through.
-                        host.original_ssh_host = if was_ssh_config {
-                            old_name.clone()
-                        } else {
-                            old_host.and_then(|h| h.original_ssh_host.clone())
+                            // An import is adopted under the name it was imported by; a copy
+                            // already adopted keeps the one it carries. Dropping it brings the
+                            // import back as a duplicate card, and takes with it the alias any
+                            // other host's `ProxyJump` resolves through.
+                            host.original_ssh_host = if was_ssh_config {
+                                old_name.clone()
+                            } else {
+                                old_host.and_then(|h| h.original_ssh_host.clone())
+                            };
+
+                            if let Some(slot) = state.hosts.get_mut(host_idx) {
+                                *slot = host.clone();
+                            }
+                            (old_name, was_ssh_config, before)
                         };
 
-                        if let Some(slot) = state.hosts.get_mut(host_idx) {
-                            *slot = host.clone();
-                        }
-                        (old_name, was_ssh_config, before)
-                    };
+                        // If the host name changed, migrate all associated data
+                        if let Some(old_name) = old_name {
+                            if old_name != host.name {
+                                let mut state = self.state.write().await;
 
-                    // If the host name changed, migrate all associated data
-                    if let Some(old_name) = old_name {
-                        if old_name != host.name {
-                            let mut state = self.state.write().await;
+                                // Migrate metrics
+                                if let Some(metrics) = state.metrics.remove(&old_name) {
+                                    state.metrics.insert(host.name.clone(), metrics);
+                                }
 
-                            // Migrate metrics
-                            if let Some(metrics) = state.metrics.remove(&old_name) {
-                                state.metrics.insert(host.name.clone(), metrics);
-                            }
+                                // Migrate connection status
+                                if let Some(status) = state.connection_statuses.remove(&old_name) {
+                                    state.connection_statuses.insert(host.name.clone(), status);
+                                }
 
-                            // Migrate connection status
-                            if let Some(status) = state.connection_statuses.remove(&old_name) {
-                                state.connection_statuses.insert(host.name.clone(), status);
-                            }
-
-                            // Migrate services
-                            if let Some(services) = state.services.remove(&old_name) {
-                                state.services.insert(host.name.clone(), services);
+                                // Migrate services
+                                if let Some(services) = state.services.remove(&old_name) {
+                                    state.services.insert(host.name.clone(), services);
+                                }
                             }
                         }
-                    }
 
-                    self.save_manual_hosts().await;
-                    self.sync_tunnels().await;
+                        self.save_manual_hosts().await;
+                        self.sync_tunnels().await;
 
-                    // The edit can change the address, the port or the monitoring
-                    // mode, none of which a running poller picks up. The pool has no
-                    // per-host restart, so this costs every other host its session —
-                    // only worth it when a poller input actually moved.
-                    if before
-                        .as_ref()
-                        .is_none_or(|b| poller_inputs_changed(b, &host))
-                    {
+                        // The edit can change the address, the port or the monitoring
+                        // mode, none of which a running poller picks up. The pool has no
+                        // per-host restart, so this costs every other host its session —
+                        // only worth it when a poller input actually moved.
+                        if before
+                            .as_ref()
+                            .is_none_or(|b| poller_inputs_changed(b, &host))
+                        {
+                            let state = self.state.read().await;
+                            if let Some(old) = self.poll_manager.take() {
+                                old.shutdown();
+                            }
+                            self.poll_manager = Some(PollManager::start(
+                                state.hosts.clone(),
+                                self.core_tx.clone(),
+                                Duration::from_secs(30),
+                            ));
+                        }
+
                         let state = self.state.read().await;
-                        if let Some(old) = self.poll_manager.take() {
-                            old.shutdown();
-                        }
-                        self.poll_manager = Some(PollManager::start(
-                            state.hosts.clone(),
-                            self.core_tx.clone(),
-                            Duration::from_secs(30),
+                        self.view.host_list.rebuild_filter(
+                            &state.hosts,
+                            &state.metrics,
+                            &state.connection_statuses,
+                        );
+                        self.view.host_list.rebuild_tags(&state.hosts);
+                        self.view.status_message = Some(
+                            crate::i18n::t(self.view.lang, crate::i18n::Key::StatusHostUpdated)
+                                .to_string(),
+                        );
+                    }
+                    Err(e) => {
+                        self.view.host_list.popup = Some(HostPopup::Edit { host_idx, form });
+                        self.view.status_message = Some(crate::i18n::tf(
+                            self.view.lang,
+                            crate::i18n::Key::StatusError,
+                            &[&e],
                         ));
                     }
-
-                    let state = self.state.read().await;
-                    self.view.host_list.rebuild_filter(
-                        &state.hosts,
-                        &state.metrics,
-                        &state.connection_statuses,
-                    );
-                    self.view.host_list.rebuild_tags(&state.hosts);
-                    self.view.status_message = Some("Host updated.".to_string());
                 }
-                Err(e) => {
-                    self.view.host_list.popup = Some(HostPopup::Edit { host_idx, form });
-                    self.view.status_message = Some(format!("Error: {e}"));
-                }
-            },
+            }
 
             other => {
                 // Wrong popup type — put it back unchanged.
@@ -804,7 +849,11 @@ impl App {
                 let mut state = self.state.write().await;
                 if idx < state.hosts.len() {
                     let removed = state.hosts.remove(idx);
-                    self.view.status_message = Some(format!("Deleted '{}'.", removed.name));
+                    self.view.status_message = Some(crate::i18n::tf(
+                        self.view.lang,
+                        crate::i18n::Key::StatusHostDeleted,
+                        &[&removed.name],
+                    ));
                 }
             }
             self.save_manual_hosts().await;
@@ -823,7 +872,11 @@ impl App {
     pub(crate) async fn save_manual_hosts(&mut self) {
         let hosts = self.state.read().await.hosts.clone();
         if let Err(e) = config::save_hosts(&hosts) {
-            self.view.status_message = Some(format!("Save failed: {e}"));
+            self.view.status_message = Some(crate::i18n::tf(
+                self.view.lang,
+                crate::i18n::Key::StatusSaveFailed,
+                &[&e.to_string()],
+            ));
         }
     }
 
@@ -848,10 +901,11 @@ impl App {
 mod tests {
 
     use super::*;
+    use crate::i18n::Lang;
 
-    /// Builds a host form from the field values, in `FORM_FIELD_LABELS` order.
+    /// Builds a host form from the field values, in `host_form_field_labels` order.
     fn host_form(values: [&str; 8]) -> HostForm {
-        let mut form = HostForm::empty();
+        let mut form = HostForm::empty(Lang::En);
         for (i, v) in values.iter().enumerate() {
             form.fields[i] = FormField::with_value(*v);
         }
@@ -866,7 +920,7 @@ mod tests {
             ("tcp", MonitorMode::TcpPort, None),
             ("tcp:8443", MonitorMode::TcpPort, Some(8443)),
         ] {
-            let parsed = parse_monitoring(text).expect("valid monitoring value");
+            let parsed = parse_monitoring(Lang::En, text).expect("valid monitoring value");
             assert_eq!(parsed, (mode, port), "parsing '{text}'");
 
             let host = Host {
@@ -874,7 +928,10 @@ mod tests {
                 monitor_port: port,
                 ..Host::default()
             };
-            assert_eq!(parse_monitoring(&monitoring_value(&host)), Ok((mode, port)));
+            assert_eq!(
+                parse_monitoring(Lang::En, &monitoring_value(&host)),
+                Ok((mode, port))
+            );
         }
     }
 
@@ -906,8 +963,8 @@ mod tests {
             monitor_port: Some(8443),
             ..base.clone()
         };
-        let reopened = HostForm::from_host(&populated)
-            .to_host(HostSource::Manual)
+        let reopened = HostForm::from_host(&populated, Lang::En)
+            .to_host(Lang::En, HostSource::Manual)
             .expect("the form round-trips a valid host");
         assert!(
             !poller_inputs_changed(&populated, &reopened),
@@ -986,32 +1043,32 @@ mod tests {
             "9443:127.0.0.1:9443, 0.0.0.0:5432:db.internal:5432, [::1]:8080:[fe80::1]:80"
         );
         assert_eq!(
-            parse_forwards(&forwards_value(&host)),
+            parse_forwards(Lang::En, &forwards_value(&host)),
             Ok(host.local_forwards)
         );
         assert_eq!(
-            parse_forwards(" 9443:localhost:9443 , ,"),
+            parse_forwards(Lang::En, " 9443:localhost:9443 , ,"),
             Ok(vec!["9443:localhost:9443".parse().unwrap()])
         );
-        assert_eq!(parse_forwards(""), Ok(Vec::new()));
+        assert_eq!(parse_forwards(Lang::En, ""), Ok(Vec::new()));
     }
 
     #[test]
     fn two_rules_on_one_local_port_are_rejected() {
         for text in ["8080:a:80, 8080:b:80", "8080:a:80, localhost:8080:b:80"] {
             assert_eq!(
-                parse_forwards(text),
+                parse_forwards(Lang::En, text),
                 Err(String::from("Port forward: two rules listen on port 8080"))
             );
         }
         // The same port on two separate addresses is two sockets.
-        assert!(parse_forwards("10.0.0.5:8080:a:80, 10.0.0.6:8080:b:80").is_ok());
+        assert!(parse_forwards(Lang::En, "10.0.0.5:8080:a:80, 10.0.0.6:8080:b:80").is_ok());
     }
 
     #[test]
     fn a_bad_forward_is_rejected_as_one() {
         for text in ["9443", "9443:localhost:0", "9443:localhost:9443, nonsense"] {
-            let err = parse_forwards(text).expect_err(text);
+            let err = parse_forwards(Lang::En, text).expect_err(text);
             assert!(err.starts_with("Port forward: "), "'{text}' gave '{err}'");
         }
     }
@@ -1026,7 +1083,7 @@ mod tests {
             ("YES", true),
         ] {
             assert_eq!(
-                parse_yes_no("Start tunnel on launch", text),
+                parse_yes_no(Lang::En, "Start tunnel on launch", text),
                 Ok(on),
                 "parsing '{text}'"
             );
@@ -1036,15 +1093,15 @@ mod tests {
                 tunnel_autostart: on,
                 ..Host::default()
             };
-            let form = HostForm::from_host(&host);
+            let form = HostForm::from_host(&host, Lang::En);
             assert_eq!(
-                parse_yes_no("Start tunnel on launch", &form.fields[10].value),
+                parse_yes_no(Lang::En, "Start tunnel on launch", &form.fields[10].value),
                 Ok(on)
             );
         }
         for text in ["maybe", "1", "true"] {
             assert_eq!(
-                parse_yes_no("Start tunnel on launch", text),
+                parse_yes_no(Lang::En, "Start tunnel on launch", text),
                 Err(format!(
                     "Start tunnel on launch must be y or n, got '{text}'"
                 ))
@@ -1060,8 +1117,11 @@ mod tests {
             forward_agent: true,
             ..Host::default()
         };
-        let parsed = |form: &HostForm| form.to_host(HostSource::Manual).map(|h| h.forward_agent);
-        let mut form = HostForm::from_host(&host);
+        let parsed = |form: &HostForm| {
+            form.to_host(Lang::En, HostSource::Manual)
+                .map(|h| h.forward_agent)
+        };
+        let mut form = HostForm::from_host(&host, Lang::En);
         assert_eq!(form.fields[11].value, "y");
         assert_eq!(parsed(&form), Ok(true));
 
@@ -1078,15 +1138,15 @@ mod tests {
         // Forwards set in the GUI or read from ~/.ssh/config have to survive an
         // edit that never touches them.
         let host = forwarded_host();
-        let edited = HostForm::from_host(&host)
-            .to_host(HostSource::Manual)
+        let edited = HostForm::from_host(&host, Lang::En)
+            .to_host(Lang::En, HostSource::Manual)
             .expect("the form round-trips a valid host");
         assert_eq!(edited.local_forwards, host.local_forwards);
         assert!(edited.tunnel_autostart);
 
-        let mut form = HostForm::from_host(&host);
+        let mut form = HostForm::from_host(&host, Lang::En);
         form.fields[9] = FormField::with_value("9443:localhost:9443, 99999:localhost:1");
-        assert!(form.to_host(HostSource::Manual).is_err());
+        assert!(form.to_host(Lang::En, HostSource::Manual).is_err());
     }
 
     #[test]
@@ -1103,7 +1163,7 @@ mod tests {
     fn an_unusable_monitoring_value_is_rejected() {
         for text in ["tcp:0", "tcp:99999", "http", "tcp:"] {
             assert!(
-                parse_monitoring(text).is_err(),
+                parse_monitoring(Lang::En, text).is_err(),
                 "'{text}' should be rejected"
             );
         }
@@ -1114,25 +1174,25 @@ mod tests {
     #[test]
     fn to_host_empty_name_errs() {
         let form = host_form(["", "h", "u", "22", "", "", "", ""]);
-        assert!(form.to_host(HostSource::Manual).is_err());
+        assert!(form.to_host(Lang::En, HostSource::Manual).is_err());
     }
 
     #[test]
     fn to_host_whitespace_name_errs() {
         let form = host_form(["   ", "h", "u", "22", "", "", "", ""]);
-        assert!(form.to_host(HostSource::Manual).is_err());
+        assert!(form.to_host(Lang::En, HostSource::Manual).is_err());
     }
 
     #[test]
     fn to_host_empty_hostname_errs() {
         let form = host_form(["n", "", "u", "22", "", "", "", ""]);
-        assert!(form.to_host(HostSource::Manual).is_err());
+        assert!(form.to_host(Lang::En, HostSource::Manual).is_err());
     }
 
     #[test]
     fn to_host_empty_user_defaults_root() {
         let host = host_form(["n", "h", "", "22", "", "", "", ""])
-            .to_host(HostSource::Manual)
+            .to_host(Lang::En, HostSource::Manual)
             .unwrap();
         assert_eq!(host.user, "root");
     }
@@ -1140,7 +1200,7 @@ mod tests {
     #[test]
     fn to_host_whitespace_user_defaults_root() {
         let host = host_form(["n", "h", "  ", "22", "", "", "", ""])
-            .to_host(HostSource::Manual)
+            .to_host(Lang::En, HostSource::Manual)
             .unwrap();
         assert_eq!(host.user, "root");
     }
@@ -1148,7 +1208,7 @@ mod tests {
     #[test]
     fn to_host_empty_port_defaults_22() {
         let host = host_form(["n", "h", "u", "", "", "", "", ""])
-            .to_host(HostSource::Manual)
+            .to_host(Lang::En, HostSource::Manual)
             .unwrap();
         assert_eq!(host.port, 22);
     }
@@ -1156,7 +1216,7 @@ mod tests {
     #[test]
     fn to_host_valid_port_parsed() {
         let host = host_form(["n", "h", "u", "2222", "", "", "", ""])
-            .to_host(HostSource::Manual)
+            .to_host(Lang::En, HostSource::Manual)
             .unwrap();
         assert_eq!(host.port, 2222);
     }
@@ -1164,7 +1224,7 @@ mod tests {
     #[test]
     fn to_host_port_max_accepted() {
         let host = host_form(["n", "h", "u", "65535", "", "", "", ""])
-            .to_host(HostSource::Manual)
+            .to_host(Lang::En, HostSource::Manual)
             .unwrap();
         assert_eq!(host.port, 65535);
     }
@@ -1173,14 +1233,14 @@ mod tests {
     fn to_host_port_zero_errs() {
         // Port 0 is invalid for SSH; the form rejects it.
         assert!(host_form(["n", "h", "u", "0", "", "", "", ""])
-            .to_host(HostSource::Manual)
+            .to_host(Lang::En, HostSource::Manual)
             .is_err());
     }
 
     #[test]
     fn to_host_port_overflow_errs() {
         let err = host_form(["n", "h", "u", "65536", "", "", "", ""])
-            .to_host(HostSource::Manual)
+            .to_host(Lang::En, HostSource::Manual)
             .unwrap_err();
         assert!(err.contains("between 1 and 65535"));
     }
@@ -1188,21 +1248,21 @@ mod tests {
     #[test]
     fn to_host_port_non_numeric_errs() {
         assert!(host_form(["n", "h", "u", "abc", "", "", "", ""])
-            .to_host(HostSource::Manual)
+            .to_host(Lang::En, HostSource::Manual)
             .is_err());
     }
 
     #[test]
     fn to_host_port_negative_errs() {
         assert!(host_form(["n", "h", "u", "-1", "", "", "", ""])
-            .to_host(HostSource::Manual)
+            .to_host(Lang::En, HostSource::Manual)
             .is_err());
     }
 
     #[test]
     fn to_host_optional_fields_none_when_empty() {
         let host = host_form(["n", "h", "u", "22", "", "", "", ""])
-            .to_host(HostSource::Manual)
+            .to_host(Lang::En, HostSource::Manual)
             .unwrap();
         assert!(host.identity_file.is_none());
         assert!(host.password.is_none());
@@ -1213,7 +1273,7 @@ mod tests {
     #[test]
     fn to_host_tags_split_and_trimmed() {
         let host = host_form(["n", "h", "u", "22", "", "", "a, b ,c,,", ""])
-            .to_host(HostSource::Manual)
+            .to_host(Lang::En, HostSource::Manual)
             .unwrap();
         assert_eq!(host.tags, vec!["a", "b", "c"]);
     }
@@ -1221,7 +1281,7 @@ mod tests {
     #[test]
     fn to_host_source_and_metadata_propagated() {
         let host = host_form(["n", "h", "u", "22", "", "", "", ""])
-            .to_host(HostSource::SshConfig)
+            .to_host(Lang::En, HostSource::SshConfig)
             .unwrap();
         assert_eq!(host.source, HostSource::SshConfig);
         assert!(host.original_ssh_host.is_none());

@@ -12,6 +12,8 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Manager, RunEvent, Window, WindowEvent};
 
 use crate::dto::TraySupportDto;
+use crate::i18n;
+use omnyssh_core::i18n::Lang;
 
 const TRAY_ID: &str = "main";
 const SHOW_ID: &str = "tray-show";
@@ -207,12 +209,37 @@ fn hide_icon(app: &AppHandle) {
     }
 }
 
+/// Relabels the tray in `lang`. The icon is built at most once (Linux cannot remove
+/// one), so a language switch edits the existing menu in place rather than rebuilding
+/// it — rebuilding would leave the old icon behind. A no-op when no icon is up yet:
+/// it is first built with the current language.
+pub fn retranslate(app: &AppHandle, lang: Lang) {
+    let Some(tray) = app.tray_by_id(TRAY_ID) else {
+        return;
+    };
+    let strings = i18n::strings(lang);
+    let Ok(menu) = Menu::with_items(
+        app,
+        &[
+            &MenuItem::with_id(app, SHOW_ID, strings.show_window, true, None::<&str>)
+                .expect("build tray show item"),
+            &MenuItem::with_id(app, QUIT_ID, strings.quit, true, None::<&str>)
+                .expect("build tray quit item"),
+        ],
+    ) else {
+        return;
+    };
+    let _ = tray.set_menu(Some(menu));
+    let _ = tray.set_tooltip(Some(strings.tray_tooltip));
+}
+
 fn build_icon(app: &AppHandle) -> tauri::Result<()> {
-    let show = MenuItem::with_id(app, SHOW_ID, "Show OmnySSH", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, QUIT_ID, "Quit OmnySSH", true, None::<&str>)?;
+    let strings = i18n::strings(i18n::current_lang());
+    let show = MenuItem::with_id(app, SHOW_ID, strings.show_window, true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, QUIT_ID, strings.quit, true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
-        .tooltip("OmnySSH")
+        .tooltip(strings.tray_tooltip)
         .menu(&menu)
         // A menu bar extra opens its menu on click; a Windows tray icon brings the
         // window back and keeps its menu for the right button.

@@ -209,11 +209,11 @@ describe('ipc event router', () => {
     beginKeySetup('web-1');
     applyKeySetupProgress({
       hostName: 'web-1',
-      step: { index: 3, total: 6, description: 'Verifying key authentication' }
+      step: { index: 3, total: 6, code: 'verifyKeyAuth', description: 'Verifying key authentication' }
     });
     expect(get(keySetup)).toEqual({
       hostName: 'web-1',
-      phase: { kind: 'running', step: { index: 3, total: 6, description: 'Verifying key authentication' } }
+      phase: { kind: 'running', step: { index: 3, total: 6, code: 'verifyKeyAuth', description: 'Verifying key authentication' } }
     });
 
     applyKeySetupComplete({ hostName: 'web-1', keyPath: '/k/id_ed25519', passwordOff: false });
@@ -223,7 +223,7 @@ describe('ipc event router', () => {
     });
 
     // A step still queued behind the outcome must not reopen the running view.
-    applyKeySetupProgress({ hostName: 'web-1', step: { index: 6, total: 6, description: 'Final verification' } });
+    applyKeySetupProgress({ hostName: 'web-1', step: { index: 6, total: 6, code: 'finalCheck', description: 'Final verification' } });
     expect(get(keySetup)?.phase.kind).toBe('complete');
     dismissKeySetup();
   });

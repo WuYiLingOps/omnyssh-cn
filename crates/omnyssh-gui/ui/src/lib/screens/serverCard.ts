@@ -1,6 +1,11 @@
 // Pure card-state derivation for the dashboard grid (tech-gui.md §2, 2.1). Kept
 // free of Svelte components so the mapping is unit-testable; `Dashboard.svelte`
 // renders `serverCards` and dispatches the quick actions.
+//
+// It is also free of i18n: user-facing text in a card leaves as a message *key*
+// plus interpolation values, which `Dashboard.svelte` resolves through `$t`. That
+// keeps this module pure and its unit tests locale-independent (mirrors
+// `hostForm.ts` / `snippetForm.ts`).
 
 import { derived } from 'svelte/store';
 import type {
@@ -32,9 +37,15 @@ export function metricStatus(percent: number): Status {
   return 'crit';
 }
 
-export type MetricRow = { label: string; percent: number | null; status: Status };
+/** A metric tile: `labelKey` names the resource (CPU/RAM/Disk) — translated at render. */
+export type MetricRow = { labelKey: string; percent: number | null; status: Status };
 
-export type CardService = { kind: ServiceKindDto; name: string; detail: string };
+/** A detected-service chip. `nameKey` names the kind; `detail` is a key plus its
+ *  values (or absent when the kind has no quick-scan detail to show). */
+export type CardService = { kind: ServiceKindDto; nameKey: string; detail?: DetailText };
+
+/** A message key plus its interpolation values, resolved by the component. */
+export type DetailText = { key: string; values?: Record<string, string> };
 
 /** Reachability of a `tcpPort` host; `undefined` for an SSH-monitored one. */
 type Reachability = 'reachable' | 'unreachable' | 'checking';
@@ -64,7 +75,8 @@ export interface CardTunnel {
   /** Connecting, up or retrying — what a Stop button stops. */
   running: boolean;
   dot: Status;
-  label: string;
+  /** Names the state (Connecting…/Active/…); translated at render. */
+  labelKey: string;
   /** Why the last attempt failed, while retrying or after giving up. */
   message?: string;
   autostart: boolean;
@@ -76,15 +88,15 @@ export function deriveTunnel(host: HostDto, status: TunnelStatusDto | undefined)
   const base = { forwards: host.localForwards, autostart: host.tunnelAutostart };
   switch (status?.kind) {
     case 'connecting':
-      return { ...base, running: true, dot: 'unknown', label: 'Connecting…' };
+      return { ...base, running: true, dot: 'unknown', labelKey: 'tunnel.connecting' };
     case 'up':
-      return { ...base, running: true, dot: 'ok', label: 'Active' };
+      return { ...base, running: true, dot: 'ok', labelKey: 'tunnel.active' };
     case 'retrying':
-      return { ...base, running: true, dot: 'warn', label: 'Reconnecting…', message: status.message };
+      return { ...base, running: true, dot: 'warn', labelKey: 'tunnel.reconnecting', message: status.message };
     case 'failed':
-      return { ...base, running: false, dot: 'off', label: 'Failed', message: status.message };
+      return { ...base, running: false, dot: 'off', labelKey: 'tunnel.failed', message: status.message };
     default:
-      return { ...base, running: false, dot: 'unknown', label: 'Off' };
+      return { ...base, running: false, dot: 'unknown', labelKey: 'tunnel.off' };
   }
 }
 
@@ -106,17 +118,19 @@ export function forwardTarget(f: LocalForwardDto, streamerOn: boolean): string {
 
 const SEVERITY: Status[] = ['ok', 'warn', 'crit'];
 
-const SERVICE_NAMES: Record<ServiceKindDto, string> = {
-  docker: 'Docker',
-  nginx: 'Nginx',
-  postgresql: 'PostgreSQL',
-  redis: 'Redis',
-  nodejs: 'Node.js'
+// A detected-service kind to its display name key. Names are proper nouns, but they
+// still route through the dictionary so a locale can adjust casing or script.
+const SERVICE_NAME_KEYS: Record<ServiceKindDto, string> = {
+  docker: 'service.docker',
+  nginx: 'service.nginx',
+  postgresql: 'service.postgresql',
+  redis: 'service.redis',
+  nodejs: 'service.nodejs'
 };
 
-function metricRow(label: string, value: number | null | undefined): MetricRow {
+function metricRow(labelKey: string, value: number | null | undefined): MetricRow {
   const percent = value ?? null;
-  return { label, percent, status: percent == null ? 'unknown' : metricStatus(percent) };
+  return { labelKey, percent, status: percent == null ? 'unknown' : metricStatus(percent) };
 }
 
 /** The worst severity among the metrics that reported a value; `ok` when none did. */
@@ -135,14 +149,14 @@ function metricValue(service: ServiceDto, name: string): number | undefined {
 
 // The discovery quick-scan only carries Docker container counts (see the core's
 // `docker::quick_metrics`); the other kinds arrive with no quick metrics, so their
-// chip shows just the service name. Empty detail => name only (tech-gui.md §4.1).
-function serviceDetail(service: ServiceDto): string {
-  if (service.kind !== 'docker') return '';
+// chip shows just the service name. Absent detail => name only (tech-gui.md §4.1).
+function serviceDetail(service: ServiceDto): DetailText | undefined {
+  if (service.kind !== 'docker') return undefined;
   const total = metricValue(service, 'containers_total');
-  if (total == null) return '';
-  if (total === 0) return 'no containers';
+  if (total == null) return undefined;
+  if (total === 0) return { key: 'service.noContainers' };
   const running = metricValue(service, 'containers_running') ?? 0;
-  return `${running}/${total} running`;
+  return { key: 'service.running', values: { running: String(running), total: String(total) } };
 }
 
 /** Build a card's view state from a host and its live status/metrics/services. */
@@ -171,9 +185,9 @@ export function deriveCard(
   }
 
   const metricRows: MetricRow[] = [
-    metricRow('CPU', m?.cpuPercent),
-    metricRow('RAM', m?.ramPercent),
-    metricRow('Disk', m?.diskPercent)
+    metricRow('metric.cpu', m?.cpuPercent),
+    metricRow('metric.ram', m?.ramPercent),
+    metricRow('metric.disk', m?.diskPercent)
   ];
   const kind = status?.kind;
   const connected = kind === 'connected';
@@ -185,7 +199,7 @@ export function deriveCard(
 
   const detectedServices: CardService[] =
     svc?.kind === 'detected'
-      ? svc.services.map((s) => ({ kind: s.kind, name: SERVICE_NAMES[s.kind], detail: serviceDetail(s) }))
+      ? svc.services.map((s) => ({ kind: s.kind, nameKey: SERVICE_NAME_KEYS[s.kind], detail: serviceDetail(s) }))
       : [];
 
   return {
@@ -341,9 +355,10 @@ export function groupByTag(cards: ServerCard[]): CardGroup[] {
 
 // Host-first quick actions (tech-gui.md §2): `sh` opens a terminal, `files` opens
 // SFTP — both through the shared spawn path. The kind is a valid icon name too.
-export type QuickAction = { id: 'sh' | 'files'; label: string; kind: SessionKind };
+// `labelKey` matches the TUI's compact command names; translated at render.
+export type QuickAction = { id: 'sh' | 'files'; labelKey: string; kind: SessionKind };
 
 export const QUICK_ACTIONS: readonly QuickAction[] = [
-  { id: 'sh', label: 'sh', kind: 'terminal' },
-  { id: 'files', label: 'files', kind: 'sftp' }
+  { id: 'sh', labelKey: 'quickAction.sh', kind: 'terminal' },
+  { id: 'files', labelKey: 'quickAction.files', kind: 'sftp' }
 ];

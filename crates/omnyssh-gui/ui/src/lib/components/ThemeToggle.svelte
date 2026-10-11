@@ -3,11 +3,12 @@
   // dark (press → light), moon while light. Icon-only, so it survives collapse.
   import { theme } from '$lib/stores/theme';
   import { Button, Icon } from '$lib/theme';
+  import { t } from 'svelte-i18n';
 </script>
 
 <Button
   variant="icon"
-  title={$theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+  title={$theme === 'dark' ? $t('theme.toLight') : $t('theme.toDark')}
   onclick={() => theme.toggle()}
 >
   <Icon name={$theme === 'dark' ? 'sun' : 'moon'} />

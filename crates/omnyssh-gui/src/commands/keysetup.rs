@@ -20,7 +20,7 @@ use omnyssh_core::ssh::key_setup::{
 };
 use omnyssh_core::ssh::session::SshSession;
 
-use crate::error::CommandError;
+use crate::error::{unknown_host, CommandError};
 use crate::state::GuiState;
 
 /// Start auto key-setup for `host_name` (tech-gui.md §4.2). Fire-and-forget: the flow
@@ -35,12 +35,12 @@ pub fn start_key_setup(
     state: State<'_, GuiState>,
     host_name: String,
 ) -> Result<(), CommandError> {
-    let host = state.host_by_name(&host_name).ok_or_else(|| CommandError {
-        message: format!("unknown host '{host_name}'"),
-    })?;
+    let host = state
+        .host_by_name(&host_name)
+        .ok_or_else(|| unknown_host(&host_name))?;
     state
         .try_begin_key_setup(&host_name)
-        .map_err(|message| CommandError { message })?;
+        .map_err(CommandError::plain)?;
     tauri::async_runtime::spawn(run_key_setup(app, host, state.engine_sender()));
     Ok(())
 }

@@ -2,6 +2,10 @@
 // Svelte components so it is unit-testable; `HostEditor.svelte` renders it. The
 // validation mirrors the TUI's `HostForm::to_host` (crates/omnyssh/src/app/host.rs)
 // so both frontends produce the same `hosts.toml` shape and error messages.
+//
+// It is also free of i18n: a failure carries a message *key* and its interpolation
+// values (`FormError`), which the component resolves through `formErrorMessage`. That
+// keeps this module pure and its unit tests locale-independent (mirrors `snippetForm.ts`).
 
 import type { HostDto, HostInputDto, LocalForwardDto, MonitorModeDto } from '$lib/bindings';
 
@@ -29,6 +33,17 @@ export interface HostFormFields {
   forwards: ForwardRow[];
   tunnelAutostart: boolean;
   forwardAgent: boolean;
+}
+
+/** A validation failure as a message key plus interpolation values; the component
+ *  translates it. `values` are always strings so they fit svelte-i18n's ICU params.
+ *  `detail` nests a second error whose rendered text fills the message's `{detail}`
+ *  slot — svelte-i18n cannot translate a key *inside* a translation, so
+ *  `formErrorMessage` resolves the inner message first and passes its text down. */
+export interface FormError {
+  key: string;
+  values?: Record<string, string>;
+  detail?: FormError;
 }
 
 export function emptyForm(): HostFormFields {
@@ -96,7 +111,7 @@ function parsePort(raw: string): number | undefined {
 }
 
 /** Parse the local side, `port` or `address:port` (IPv6 in brackets). */
-function parseListen(raw: string): { bindAddress?: string; bindPort: number } | string {
+function parseListen(raw: string): { bindAddress?: string; bindPort: number } | FormError {
   const v = raw.trim();
   const bracket = /^\[([^\]]*)\]:(.*)$/.exec(v);
   const [address, portRaw] = bracket
@@ -104,34 +119,42 @@ function parseListen(raw: string): { bindAddress?: string; bindPort: number } | 
     : v.includes(':')
       ? [v.slice(0, v.lastIndexOf(':')), v.slice(v.lastIndexOf(':') + 1)]
       : [undefined, v];
-  if (address?.includes(':') && !bracket) return 'put an IPv6 address in brackets, e.g. [::1]:8080';
+  if (address?.includes(':') && !bracket) return { key: 'hostEditor.errIpv6Brackets' };
   const bindPort = parsePort(portRaw);
-  if (bindPort == null) return `local port must be a number between 1 and 65535, got '${portRaw.trim()}'`;
+  if (bindPort == null) {
+    return { key: 'hostEditor.errLocalPort', values: { value: portRaw.trim() } };
+  }
   return { bindAddress: address, bindPort };
 }
 
 /** Rows to forwards; blank rows are dropped, anything else must be complete. */
-function parseForwards(rows: ForwardRow[]): LocalForwardDto[] | string {
+function parseForwards(rows: ForwardRow[]): LocalForwardDto[] | FormError {
   const forwards: LocalForwardDto[] = [];
   const listening = new Map<string, number>();
   for (const [i, row] of rows.entries()) {
     if (!row.local.trim() && !row.remotePort.trim()) continue;
     const n = i + 1;
     const listen = parseListen(row.local);
-    if (typeof listen === 'string') return `Forward ${n}: ${listen}`;
+    if ('key' in listen) {
+      return { key: 'hostEditor.errForward', values: { n: String(n) }, detail: listen };
+    }
     // A bracketed IPv6 target is stored bare; the brackets are notation only.
     const remoteHost = row.remoteHost.trim().replace(/^\[(.*)\]$/, '$1');
     if (!remoteHost || /[\s[\]]/.test(remoteHost)) {
-      return `Forward ${n}: enter the host to reach from the server, e.g. localhost`;
+      return { key: 'hostEditor.errForward', values: { n: String(n) }, detail: { key: 'hostEditor.errForwardHost' } };
     }
     const remotePort = parsePort(row.remotePort);
     if (remotePort == null) {
-      return `Forward ${n}: remote port must be a number between 1 and 65535, got '${row.remotePort.trim()}'`;
+      return {
+        key: 'hostEditor.errForward',
+        values: { n: String(n) },
+        detail: { key: 'hostEditor.errForwardRemotePort', values: { value: row.remotePort.trim() } }
+      };
     }
     // Two rules on one local port would fail the whole tunnel at bind time.
     const key = `${listen.bindAddress ?? 'localhost'}|${listen.bindPort}`;
     const clash = listening.get(key);
-    if (clash) return `Forward ${n} listens on the same port as forward ${clash}`;
+    if (clash) return { key: 'hostEditor.errForwardClash', values: { n: String(n), other: String(clash) } };
     listening.set(key, n);
     forwards.push({ ...listen, remoteHost, remotePort });
   }
@@ -145,9 +168,24 @@ function splitCsv(raw: string): string[] {
     .filter(Boolean);
 }
 
-export type HostFormResult = { ok: true; input: HostInputDto } | { ok: false; error: string };
+export type HostFormResult = { ok: true; input: HostInputDto } | { ok: false; error: FormError };
 
-/** Validate + build a `HostInputDto`, or return an error message. Mirrors the TUI's
+/** Resolve a `FormError` to display text, up to the caller's translator. Expected
+ *  values are strings, so the ICU params need no further shaping. */
+export function formErrorMessage(
+  error: FormError,
+  translate: (key: string, options?: { values?: Record<string, string> }) => string
+): string {
+  // The nested message is resolved first and passed as the `{detail}` value: ICU
+  // interpolation takes strings, not keys, and svelte-i18n does not nest lookups.
+  if (error.detail === undefined) return translate(error.key, { values: error.values });
+  const { detail, ...rest } = error;
+  return translate(error.key, {
+    values: { ...rest.values, detail: formErrorMessage(detail, translate) }
+  });
+}
+
+/** Validate + build a `HostInputDto`, or return an error. Mirrors the TUI's
  *  `to_host`: name and hostname are required; user defaults to `root` and port to `22`
  *  when blank; port must be a 1–65535 integer; identity/password/notes are trimmed and
  *  dropped to `undefined` when empty (so the wire form stays sparse, §4.1). `proxyJump`
@@ -155,9 +193,9 @@ export type HostFormResult = { ok: true; input: HostInputDto } | { ok: false; er
  *  preserves any existing value across an edit. */
 export function formToInput(f: HostFormFields): HostFormResult {
   const name = f.name.trim();
-  if (!name) return { ok: false, error: 'Name cannot be empty' };
+  if (!name) return { ok: false, error: { key: 'hostEditor.errNameEmpty' } };
   const hostname = f.hostname.trim();
-  if (!hostname) return { ok: false, error: 'Hostname / IP cannot be empty' };
+  if (!hostname) return { ok: false, error: { key: 'hostEditor.errHostnameEmpty' } };
   const user = f.user.trim() || 'root';
 
   const portRaw = f.port.trim();
@@ -166,7 +204,7 @@ export function formToInput(f: HostFormFields): HostFormResult {
     // Digits with an optional leading `+`, matching Rust's `u16::parse` (which accepts
     // `+22` but no `-`/decimal/hex/exponent); the range guard covers 0 and overflow.
     if (!/^\+?\d+$/.test(portRaw) || Number(portRaw) < 1 || Number(portRaw) > 65535) {
-      return { ok: false, error: `Port must be a number between 1 and 65535, got '${portRaw}'` };
+      return { ok: false, error: { key: 'hostEditor.errPortRange', values: { value: portRaw } } };
     }
     port = Number(portRaw);
   }
@@ -176,16 +214,13 @@ export function formToInput(f: HostFormFields): HostFormResult {
   const monitorPortRaw = f.monitorPort.trim();
   if (f.monitoring === 'tcpPort' && monitorPortRaw !== '') {
     if (!/^\+?\d+$/.test(monitorPortRaw) || Number(monitorPortRaw) < 1 || Number(monitorPortRaw) > 65535) {
-      return {
-        ok: false,
-        error: `Probe port must be a number between 1 and 65535, got '${monitorPortRaw}'`
-      };
+      return { ok: false, error: { key: 'hostEditor.errProbePortRange', values: { value: monitorPortRaw } } };
     }
     monitorPort = Number(monitorPortRaw);
   }
 
   const localForwards = parseForwards(f.forwards);
-  if (typeof localForwards === 'string') return { ok: false, error: localForwards };
+  if (!Array.isArray(localForwards)) return { ok: false, error: localForwards };
 
   const identityFile = f.identityFile.trim();
   const password = f.password.trim();

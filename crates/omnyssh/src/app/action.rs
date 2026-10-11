@@ -179,6 +179,12 @@ pub enum AppAction {
     /// Switch the host for the currently focused pane (replaces its tab with a new connection).
     /// Only available in split view mode. Opens the host picker.
     TermSwitchPaneHost,
+
+    // -----------------------------------------------------------------------
+    // Global actions
+    // -----------------------------------------------------------------------
+    /// Cycle the interface language (`en` → `zh-Hans` → `en`) and persist it.
+    ToggleLanguage,
 }
 
 /// Direction for dashboard grid navigation.

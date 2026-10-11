@@ -28,6 +28,13 @@ pub struct Cli {
     #[arg(short, long, value_name = "THEME")]
     pub theme: Option<String>,
 
+    /// Override the interface language (en | zh-Hans).
+    ///
+    /// Saved to the config file, so it persists on the next run without the
+    /// flag. Also switchable from within the app.
+    #[arg(long, value_name = "LANG")]
+    pub lang: Option<String>,
+
     /// Enable verbose debug logging (written to a log file in the config directory).
     #[arg(short, long)]
     pub verbose: bool,

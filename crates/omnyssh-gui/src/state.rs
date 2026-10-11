@@ -9,6 +9,7 @@ use std::sync::{Mutex, RwLock};
 use std::time::Duration;
 
 use omnyssh_core::event::{CoreEvent, SessionId, TransferId};
+use omnyssh_core::i18n::Lang;
 use omnyssh_core::ssh::client::Host;
 use omnyssh_core::ssh::pool::PollManager;
 use omnyssh_core::ssh::pty::PtyManager;
@@ -103,6 +104,10 @@ pub struct GuiState {
     /// The last status of every tunnel that has not stopped, replayed to a
     /// frontend that reloads while its tunnels keep running.
     tunnel_statuses: Mutex<HashMap<String, TunnelStatusDto>>,
+    /// The shell's own language (menu, tray), mirrored from the shared config on
+    /// start and updated by `set_language`. The webview keeps its own copy in
+    /// `svelte-i18n`; this one only feeds strings the shell draws itself.
+    language: Mutex<Lang>,
     /// Shared engine channel the bridge drains; cloned to `PollManager`/`PtyManager`.
     engine_tx: mpsc::Sender<CoreEvent>,
 }
@@ -123,6 +128,7 @@ impl GuiState {
             tunnels: Mutex::new(TunnelManager::new(engine_tx.clone())),
             tunnels_autostarted: AtomicBool::new(false),
             tunnel_statuses: Mutex::new(HashMap::new()),
+            language: Mutex::new(crate::i18n::current_lang()),
             engine_tx,
         }
     }
@@ -130,6 +136,17 @@ impl GuiState {
     /// Replace the host cache with a freshly loaded list.
     pub fn set_hosts(&self, hosts: Vec<Host>) {
         *self.hosts.write().expect("hosts lock poisoned") = hosts;
+    }
+
+    /// The shell's current language (menu and tray labels).
+    pub fn language(&self) -> Lang {
+        *self.language.lock().expect("language lock poisoned")
+    }
+
+    /// Record the user's language choice. The webview has already switched itself;
+    /// the shell redraws its own labels from this.
+    pub fn set_language(&self, lang: Lang) {
+        *self.language.lock().expect("language lock poisoned") = lang;
     }
 
     /// Clone the shared engine sender for a command that drives the core directly and

@@ -9,10 +9,11 @@ use ratatui::{
 };
 
 use crate::app::{
-    FormField, HostForm, PassphrasePrompt, PasswordPrompt, SnippetForm, SnippetResultEntry,
-    UpdateButton, UpdatePopup, UpdatePopupPhase, FORM_FIELD_LABELS, SNIPPET_FORM_FIELD_LABELS,
+    host_form_field_labels, snippet_form_field_labels, FormField, HostForm, PassphrasePrompt,
+    PasswordPrompt, SnippetForm, SnippetResultEntry, UpdateButton, UpdatePopup, UpdatePopupPhase,
     UPDATE_BUTTONS,
 };
+use crate::i18n::{t, tf, Key, Lang};
 use crate::ui::theme::Theme;
 use omnyssh_core::ssh::client::Host;
 
@@ -47,12 +48,15 @@ pub fn centred_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
 // ---------------------------------------------------------------------------
 
 /// Renders the built-in help popup listing all key bindings organized by screen.
-pub fn render_help(frame: &mut Frame, theme: &Theme) {
+///
+/// Every description comes from the i18n table; the key column (`1`, `Enter`,
+/// `Ctrl+T`, …) is an input token and stays literal in both languages.
+pub fn render_help(frame: &mut Frame, theme: &Theme, lang: Lang) {
     let area = centred_rect(95, 85, frame.area());
     frame.render_widget(Clear, area);
 
     let block = Block::default()
-        .title(" Help — Keyboard Shortcuts ")
+        .title(t(lang, Key::HelpTitle))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -80,250 +84,121 @@ pub fn render_help(frame: &mut Frame, theme: &Theme) {
         ])
         .split(inner);
 
-    // Column 1: Global Navigation + Dashboard
-    let mut col1_lines = vec![Line::from("")];
-    col1_lines.push(Line::from(Span::styled(
-        " GLOBAL NAVIGATION",
-        section_style,
-    )));
-    col1_lines.push(Line::from(vec![
-        Span::styled("  1", key_style),
-        Span::styled("        Dashboard", desc_style),
-    ]));
-    col1_lines.push(Line::from(vec![
-        Span::styled("  2", key_style),
-        Span::styled("        File Manager", desc_style),
-    ]));
-    col1_lines.push(Line::from(vec![
-        Span::styled("  3", key_style),
-        Span::styled("        Snippets", desc_style),
-    ]));
-    col1_lines.push(Line::from(vec![
-        Span::styled("  4", key_style),
-        Span::styled("        Terminal", desc_style),
-    ]));
-    col1_lines.push(Line::from(vec![
-        Span::styled("  ?", key_style),
-        Span::styled("        Help", desc_style),
-    ]));
-    col1_lines.push(Line::from(vec![
-        Span::styled("  q", key_style),
-        Span::styled("        Quit", desc_style),
-    ]));
-    col1_lines.push(Line::from(""));
+    // A help row is a literal key token plus a translatable description.
+    // `pad` keeps the description column aligned under keys of differing width.
+    let row = |key_token: &str, pad: &str, desc: Key| {
+        Line::from(vec![
+            Span::styled(format!("  {key_token}"), key_style),
+            Span::styled(format!("{pad}{}", t(lang, desc)), desc_style),
+        ])
+    };
+    let header = |section: Key| Line::from(Span::styled(t(lang, section), section_style));
 
-    col1_lines.push(Line::from(Span::styled(" DASHBOARD", section_style)));
-    col1_lines.push(Line::from(vec![
-        Span::styled("  Enter", key_style),
-        Span::styled("    Open details", desc_style),
-    ]));
-    col1_lines.push(Line::from(vec![
-        Span::styled("  a", key_style),
-        Span::styled("        Add host", desc_style),
-    ]));
-    col1_lines.push(Line::from(vec![
-        Span::styled("  e", key_style),
-        Span::styled("        Edit host", desc_style),
-    ]));
-    col1_lines.push(Line::from(vec![
-        Span::styled("  d", key_style),
-        Span::styled("        Delete host", desc_style),
-    ]));
-    col1_lines.push(Line::from(vec![
-        Span::styled("  r", key_style),
-        Span::styled("        Refresh", desc_style),
-    ]));
-    col1_lines.push(Line::from(vec![
-        Span::styled("  s", key_style),
-        Span::styled("        Sort", desc_style),
-    ]));
-    col1_lines.push(Line::from(vec![
-        Span::styled("  t", key_style),
-        Span::styled("        Filter tags", desc_style),
-    ]));
-    col1_lines.push(Line::from(vec![
-        Span::styled("  g", key_style),
-        Span::styled("        Group by tag", desc_style),
-    ]));
-    col1_lines.push(Line::from(vec![
-        Span::styled("  /", key_style),
-        Span::styled("        Search", desc_style),
-    ]));
-    col1_lines.push(Line::from(vec![
-        Span::styled("  x", key_style),
-        Span::styled("        Quick exec", desc_style),
-    ]));
-    col1_lines.push(Line::from(vec![
-        Span::styled("  K", key_style),
-        Span::styled("        Setup SSH key", desc_style),
-    ]));
-    col1_lines.push(Line::from(vec![
-        Span::styled("  f", key_style),
-        Span::styled("        Tunnel on/off", desc_style),
-    ]));
-    col1_lines.push(Line::from(vec![
-        Span::styled("  hjkl", key_style),
-        Span::styled("    Navigate", desc_style),
-    ]));
+    // Column 1: Global Navigation + Dashboard
+    let col1_lines = vec![
+        Line::from(""),
+        header(Key::HelpSectionGlobalNav),
+        row("1", "        ", Key::NavDashboard),
+        row("2", "        ", Key::NavFiles),
+        row("3", "        ", Key::NavSnippets),
+        row("4", "        ", Key::NavTerminal),
+        row("?", "        ", Key::NavHelp),
+        row("q", "        ", Key::NavQuit),
+        Line::from(""),
+        header(Key::HelpSectionDashboard),
+        row("Enter", "    ", Key::HelpOpenDetails),
+        row("a", "        ", Key::HelpAddHost),
+        row("e", "        ", Key::HelpEditHost),
+        row("d", "        ", Key::HelpDeleteHost),
+        row("r", "        ", Key::HelpRefresh),
+        row("s", "        ", Key::HelpSort),
+        row("t", "        ", Key::HelpFilterTags),
+        row("g", "        ", Key::HelpGroupByTag),
+        row("/", "        ", Key::HelpSearch),
+        row("x", "        ", Key::HelpQuickExec),
+        row("K", "        ", Key::HelpSetupKey),
+        row("f", "        ", Key::HelpTunnelToggle),
+        row("hjkl", "    ", Key::HelpNavigate),
+    ];
 
     frame.render_widget(Paragraph::new(col1_lines), columns[0]);
 
     // Column 2: Detail View + File Manager + Snippets
-    let mut col2_lines = vec![Line::from("")];
-    col2_lines.push(Line::from(Span::styled(" DETAIL VIEW", section_style)));
-    col2_lines.push(Line::from(vec![
-        Span::styled("  Enter", key_style),
-        Span::styled("    Connect", desc_style),
-    ]));
-    col2_lines.push(Line::from(vec![
-        Span::styled("  r", key_style),
-        Span::styled("        Refresh", desc_style),
-    ]));
-    col2_lines.push(Line::from(vec![
-        Span::styled("  Esc", key_style),
-        Span::styled("      Back", desc_style),
-    ]));
-    col2_lines.push(Line::from(vec![
-        Span::styled("  4-9", key_style),
-        Span::styled("      Quick view", desc_style),
-    ]));
-    col2_lines.push(Line::from(vec![
-        Span::styled("  f", key_style),
-        Span::styled("        Tunnel on/off", desc_style),
-    ]));
-    col2_lines.push(Line::from(""));
-
-    col2_lines.push(Line::from(Span::styled(" FILE MANAGER", section_style)));
-    col2_lines.push(Line::from(vec![
-        Span::styled("  hjkl", key_style),
-        Span::styled("    Navigate", desc_style),
-    ]));
-    col2_lines.push(Line::from(vec![
-        Span::styled("  Tab", key_style),
-        Span::styled("      Switch panel", desc_style),
-    ]));
-    col2_lines.push(Line::from(vec![
-        Span::styled("  Space", key_style),
-        Span::styled("    Mark file", desc_style),
-    ]));
-    col2_lines.push(Line::from(vec![
-        Span::styled("  c", key_style),
-        Span::styled("        Copy", desc_style),
-    ]));
-    col2_lines.push(Line::from(vec![
-        Span::styled("  p", key_style),
-        Span::styled("        Paste", desc_style),
-    ]));
-    col2_lines.push(Line::from(vec![
-        Span::styled("  n", key_style),
-        Span::styled("        New dir", desc_style),
-    ]));
-    col2_lines.push(Line::from(vec![
-        Span::styled("  R", key_style),
-        Span::styled("        Rename", desc_style),
-    ]));
-    col2_lines.push(Line::from(vec![
-        Span::styled("  D", key_style),
-        Span::styled("        Delete", desc_style),
-    ]));
-    col2_lines.push(Line::from(vec![
-        Span::styled("  H", key_style),
-        Span::styled("        Connect", desc_style),
-    ]));
-    col2_lines.push(Line::from(vec![
-        Span::styled("  .", key_style),
-        Span::styled("        Toggle hidden", desc_style),
-    ]));
+    let mut col2_lines = vec![
+        Line::from(""),
+        header(Key::HelpSectionDetailView),
+        row("Enter", "    ", Key::HelpConnect),
+        row("r", "        ", Key::HelpRefresh),
+        row("Esc", "      ", Key::HelpBack),
+        row("4-9", "      ", Key::HelpQuickView),
+        row("f", "        ", Key::HelpTunnelToggle),
+        Line::from(""),
+        header(Key::HelpSectionFileManager),
+        row("hjkl", "    ", Key::HelpNavigate),
+        row("Tab", "      ", Key::HelpSwitchPanel),
+        row("Space", "    ", Key::HelpMarkFile),
+        row("c", "        ", Key::HelpCopy),
+        row("p", "        ", Key::HelpPaste),
+        row("n", "        ", Key::HelpNewDir),
+        row("R", "        ", Key::HelpRename),
+        row("D", "        ", Key::HelpDelete),
+        row("H", "        ", Key::HelpConnect),
+        row(".", "        ", Key::HelpToggleHidden),
+    ];
     if cfg!(windows) {
-        col2_lines.push(Line::from(vec![
-            Span::styled("  d", key_style),
-            Span::styled("        Next drive", desc_style),
-        ]));
+        col2_lines.push(row("d", "        ", Key::HelpNextDrive));
     }
-    col2_lines.push(Line::from(""));
-
-    col2_lines.push(Line::from(Span::styled(" SNIPPETS", section_style)));
-    col2_lines.push(Line::from(vec![
-        Span::styled("  Enter", key_style),
-        Span::styled("    Run snippet", desc_style),
-    ]));
-    col2_lines.push(Line::from(vec![
-        Span::styled("  n", key_style),
-        Span::styled("        New", desc_style),
-    ]));
-    col2_lines.push(Line::from(vec![
-        Span::styled("  e", key_style),
-        Span::styled("        Edit", desc_style),
-    ]));
-    col2_lines.push(Line::from(vec![
-        Span::styled("  d", key_style),
-        Span::styled("        Delete", desc_style),
-    ]));
-    col2_lines.push(Line::from(vec![
-        Span::styled("  b", key_style),
-        Span::styled("        Broadcast", desc_style),
-    ]));
-    col2_lines.push(Line::from(vec![
-        Span::styled("  /", key_style),
-        Span::styled("        Search", desc_style),
-    ]));
+    col2_lines.extend([
+        Line::from(""),
+        header(Key::HelpSectionSnippets),
+        row("Enter", "    ", Key::HelpRunSnippet),
+        row("n", "        ", Key::HelpNew),
+        row("e", "        ", Key::HelpEdit),
+        row("d", "        ", Key::HelpDelete),
+        row("b", "        ", Key::HelpBroadcast),
+        row("/", "        ", Key::HelpSearch),
+    ]);
 
     frame.render_widget(Paragraph::new(col2_lines), columns[1]);
 
     // Column 3: Terminal + Footer
-    let mut col3_lines = vec![Line::from("")];
-    col3_lines.push(Line::from(Span::styled(" TERMINAL", section_style)));
-    col3_lines.push(Line::from(vec![
-        Span::styled("  Ctrl+T", key_style),
-        Span::styled("   New tab", desc_style),
-    ]));
-    col3_lines.push(Line::from(vec![
-        Span::styled("  Ctrl+W", key_style),
-        Span::styled("   Close tab", desc_style),
-    ]));
-    col3_lines.push(Line::from(vec![
-        Span::styled("  Ctrl+N", key_style),
-        Span::styled("   Next tab", desc_style),
-    ]));
-    col3_lines.push(Line::from(vec![
-        Span::styled("  Ctrl+\\", key_style),
-        Span::styled("   V-split", desc_style),
-    ]));
-    col3_lines.push(Line::from(vec![
-        Span::styled("  Ctrl+]", key_style),
-        Span::styled("   H-split", desc_style),
-    ]));
-    col3_lines.push(Line::from(vec![
-        Span::styled("  Ctrl+Q", key_style),
-        Span::styled("   Exit", desc_style),
-    ]));
-    col3_lines.push(Line::from(""));
-    col3_lines.push(Line::from(Span::styled(" COPY TEXT", section_style)));
-    col3_lines.push(Line::from(vec![
-        Span::styled("  Mouse drag", key_style),
-        Span::styled(" Select text", desc_style),
-    ]));
-    col3_lines.push(Line::from(vec![
-        Span::styled("  Cmd+C/Ctrl+C", key_style),
-        Span::styled(" Copy", desc_style),
-    ]));
-    col3_lines.push(Line::from(vec![Span::styled(
-        "  (Terminal screen only)",
-        Style::default()
-            .fg(theme.text_secondary)
-            .add_modifier(Modifier::ITALIC),
-    )]));
-    col3_lines.push(Line::from(""));
-    col3_lines.push(Line::from(""));
-    col3_lines.push(Line::from(""));
-    col3_lines.push(Line::from(""));
-    col3_lines.push(Line::from(""));
-    col3_lines.push(Line::from(Span::styled(
-        " Press Esc or ? to close",
-        Style::default()
-            .fg(theme.text_muted)
-            .add_modifier(Modifier::ITALIC),
-    )));
+    let col3_lines = vec![
+        Line::from(""),
+        header(Key::HelpSectionTerminal),
+        row("Ctrl+T", "   ", Key::HelpNewTab),
+        row("Ctrl+W", "   ", Key::HelpCloseTab),
+        row("Ctrl+N", "   ", Key::HelpNextTab),
+        row("Ctrl+\\", "   ", Key::HelpVSplit),
+        row("Ctrl+]", "   ", Key::HelpHSplit),
+        row("Ctrl+Q", "   ", Key::HelpExit),
+        Line::from(""),
+        header(Key::HelpSectionCopyText),
+        Line::from(vec![
+            Span::styled("  Mouse drag", key_style),
+            Span::styled(t(lang, Key::HelpSelectText), desc_style),
+        ]),
+        Line::from(vec![
+            Span::styled("  Cmd+C/Ctrl+C", key_style),
+            Span::styled(format!(" {}", t(lang, Key::HelpCopy).trim()), desc_style),
+        ]),
+        Line::from(vec![Span::styled(
+            t(lang, Key::HelpTerminalOnly),
+            Style::default()
+                .fg(theme.text_secondary)
+                .add_modifier(Modifier::ITALIC),
+        )]),
+        Line::from(""),
+        Line::from(""),
+        Line::from(""),
+        Line::from(""),
+        Line::from(""),
+        Line::from(Span::styled(
+            t(lang, Key::HelpFooterClose),
+            Style::default()
+                .fg(theme.text_muted)
+                .add_modifier(Modifier::ITALIC),
+        )),
+    ];
 
     frame.render_widget(Paragraph::new(col3_lines), columns[2]);
 }
@@ -335,13 +210,20 @@ pub fn render_help(frame: &mut Frame, theme: &Theme) {
 /// Renders the host add/edit form popup.
 ///
 /// `title` is either `"Add Host"` or `"Edit Host"`.
-pub fn render_host_form(frame: &mut Frame, form: &HostForm, title: &str, theme: &Theme) {
+pub fn render_host_form(
+    frame: &mut Frame,
+    form: &HostForm,
+    title: &str,
+    theme: &Theme,
+    lang: Lang,
+) {
+    let labels = host_form_field_labels(lang);
     // Taller popup to fit all fields.
     // One row for each label and input, plus top padding, the hint and its spacer,
     // and the border. Sizing to that rather than to a fixed share of the screen
     // keeps the last field on screen when the terminal is short.
     let frame_area = frame.area();
-    let needed = u32::from(FORM_FIELD_LABELS.len() as u16) * 2 + 5;
+    let needed = u32::from(labels.len() as u16) * 2 + 5;
     let percent = (needed * 100)
         .div_ceil(u32::from(frame_area.height.max(1)))
         .clamp(50, 100) as u16;
@@ -362,7 +244,7 @@ pub fn render_host_form(frame: &mut Frame, form: &HostForm, title: &str, theme: 
     // A terminal too short for every field shows the ones around the focus;
     // the padding and spacer rows point at the ones scrolled out.
     let capacity = usize::from(inner.height.saturating_sub(3) / 2);
-    let window = field_window(FORM_FIELD_LABELS.len(), form.focused_field, capacity);
+    let window = field_window(labels.len(), form.focused_field, capacity);
     let num_fields = window.len();
     // 1 blank line top + 2 lines per field (label + input) + 2 hint lines
     let mut constraints: Vec<Constraint> = Vec::with_capacity(num_fields * 2 + 3);
@@ -394,11 +276,15 @@ pub fn render_host_form(frame: &mut Frame, form: &HostForm, title: &str, theme: 
 
     let more_style = Style::default().fg(theme.text_muted);
     if window.start > 0 {
-        let more = format!("  ↑ {} more", window.start);
+        let more = tf(lang, Key::PopupFormMoreAbove, &[&window.start.to_string()]);
         frame.render_widget(Paragraph::new(Span::styled(more, more_style)), rows[0]);
     }
-    if window.end < FORM_FIELD_LABELS.len() {
-        let more = format!("  ↓ {} more", FORM_FIELD_LABELS.len() - window.end);
+    if window.end < labels.len() {
+        let more = tf(
+            lang,
+            Key::PopupFormMoreBelow,
+            &[&(labels.len() - window.end).to_string()],
+        );
         frame.render_widget(
             Paragraph::new(Span::styled(more, more_style)),
             rows[1 + num_fields * 2],
@@ -406,7 +292,7 @@ pub fn render_host_form(frame: &mut Frame, form: &HostForm, title: &str, theme: 
     }
 
     for (row, i) in window.enumerate() {
-        let label = FORM_FIELD_LABELS[i];
+        let label = labels[i];
         let label_row = rows[1 + row * 2];
         let input_row = rows[2 + row * 2];
         let is_focused = i == form.focused_field;
@@ -502,13 +388,14 @@ pub fn render_tag_filter_popup(
     selected_idx: usize,
     active_filter: Option<&str>,
     theme: &Theme,
+    lang: Lang,
 ) {
     let area = centred_rect(40, 60, frame.area());
     frame.render_widget(Clear, area);
 
     let title = match active_filter {
-        Some(t) => format!(" Filter by tag [{}] ", t),
-        None => " Filter by tag ".to_string(),
+        Some(t) => tf(lang, Key::PopupFilterByTagActive, &[t]),
+        None => t(lang, Key::PopupFilterByTag).to_string(),
     };
 
     let block = Block::default()
@@ -525,7 +412,7 @@ pub fn render_tag_filter_popup(
     let mut items: Vec<ListItem> = vec![ListItem::new(Line::from(vec![
         Span::styled("  ", Style::default()),
         Span::styled(
-            "All (clear filter)",
+            t(lang, Key::PopupTagAll),
             Style::default()
                 .fg(theme.text_secondary)
                 .add_modifier(Modifier::ITALIC),
@@ -582,12 +469,12 @@ pub fn render_tag_filter_popup(
 }
 
 /// Renders a small delete-confirmation popup.
-pub fn render_delete_confirm(frame: &mut Frame, host_name: &str, theme: &Theme) {
+pub fn render_delete_confirm(frame: &mut Frame, host_name: &str, theme: &Theme, lang: Lang) {
     let area = centred_rect(50, 25, frame.area());
     frame.render_widget(Clear, area);
 
     let block = Block::default()
-        .title(" Confirm Delete ")
+        .title(t(lang, Key::PopupConfirmDeleteHostTitle))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -609,7 +496,7 @@ pub fn render_delete_confirm(frame: &mut Frame, host_name: &str, theme: &Theme) 
 
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            format!("  Delete host '{}'?", host_name),
+            tf(lang, Key::PopupDeleteHostPrompt, &[host_name]),
             Style::default()
                 .fg(theme.text_primary)
                 .add_modifier(Modifier::BOLD),
@@ -619,7 +506,7 @@ pub fn render_delete_confirm(frame: &mut Frame, host_name: &str, theme: &Theme) 
 
     frame.render_widget(
         Paragraph::new(Line::from(vec![Span::styled(
-            "  This cannot be undone.  ",
+            t(lang, Key::PopupDeleteHostWarning),
             Style::default().fg(theme.text_muted),
         )])),
         rows[2],
@@ -652,7 +539,14 @@ pub fn render_delete_confirm(frame: &mut Frame, host_name: &str, theme: &Theme) 
 // ---------------------------------------------------------------------------
 
 /// Renders the snippet add/edit form popup.
-pub fn render_snippet_form(frame: &mut Frame, form: &SnippetForm, title: &str, theme: &Theme) {
+pub fn render_snippet_form(
+    frame: &mut Frame,
+    form: &SnippetForm,
+    title: &str,
+    theme: &Theme,
+    lang: Lang,
+) {
+    let labels = snippet_form_field_labels(lang);
     let area = centred_rect(70, 85, frame.area());
     frame.render_widget(Clear, area);
 
@@ -666,7 +560,7 @@ pub fn render_snippet_form(frame: &mut Frame, form: &SnippetForm, title: &str, t
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let num_fields = SNIPPET_FORM_FIELD_LABELS.len();
+    let num_fields = labels.len();
     // 1 blank + 2 lines per field (label + input) + spacer + hint
     let mut constraints: Vec<Constraint> = Vec::with_capacity(num_fields * 2 + 3);
     constraints.push(Constraint::Length(1));
@@ -695,7 +589,7 @@ pub fn render_snippet_form(frame: &mut Frame, form: &SnippetForm, title: &str, t
         .fg(theme.accent)
         .add_modifier(Modifier::BOLD);
 
-    for (i, label) in SNIPPET_FORM_FIELD_LABELS.iter().enumerate() {
+    for (i, label) in labels.iter().enumerate() {
         let label_row = rows[1 + i * 2];
         let input_row = rows[2 + i * 2];
         let is_focused = i == form.focused_field;
@@ -765,12 +659,17 @@ pub fn render_snippet_form(frame: &mut Frame, form: &SnippetForm, title: &str, t
 }
 
 /// Renders a delete-confirmation popup for a snippet.
-pub fn render_snippet_delete_confirm(frame: &mut Frame, snippet_name: &str, theme: &Theme) {
+pub fn render_snippet_delete_confirm(
+    frame: &mut Frame,
+    snippet_name: &str,
+    theme: &Theme,
+    lang: Lang,
+) {
     let area = centred_rect(55, 25, frame.area());
     frame.render_widget(Clear, area);
 
     let block = Block::default()
-        .title(" Confirm Delete Snippet ")
+        .title(t(lang, Key::PopupConfirmDeleteSnippetTitle))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -792,7 +691,7 @@ pub fn render_snippet_delete_confirm(frame: &mut Frame, snippet_name: &str, them
 
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            format!("  Delete snippet '{}'?", snippet_name),
+            tf(lang, Key::PopupDeleteSnippetPrompt, &[snippet_name]),
             Style::default()
                 .fg(theme.text_primary)
                 .add_modifier(Modifier::BOLD),
@@ -802,7 +701,7 @@ pub fn render_snippet_delete_confirm(frame: &mut Frame, snippet_name: &str, them
 
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            "  This cannot be undone.",
+            t(lang, Key::PopupDeleteSnippetWarning),
             Style::default().fg(theme.text_muted),
         ))),
         rows[2],
@@ -838,12 +737,13 @@ pub fn render_param_input(
     param_fields: &[FormField],
     focused_field: usize,
     theme: &Theme,
+    lang: Lang,
 ) {
     let area = centred_rect(60, 70, frame.area());
     frame.render_widget(Clear, area);
 
     let block = Block::default()
-        .title(format!(" Parameters — {} ", snippet_name))
+        .title(tf(lang, Key::PopupParamsTitle, &[snippet_name]))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -957,12 +857,13 @@ pub fn render_broadcast_picker(
     selected_host_indices: &[usize],
     cursor: usize,
     theme: &Theme,
+    lang: Lang,
 ) {
     let area = centred_rect(60, 75, frame.area());
     frame.render_widget(Clear, area);
 
     let block = Block::default()
-        .title(" Broadcast — Select Hosts ")
+        .title(t(lang, Key::PopupBroadcastTitle))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -1059,9 +960,14 @@ pub fn render_broadcast_picker(
 }
 
 /// Renders the passphrase prompt for an encrypted identity file.
-pub fn render_passphrase_prompt(frame: &mut Frame, prompt: &PassphrasePrompt, theme: &Theme) {
+pub fn render_passphrase_prompt(
+    frame: &mut Frame,
+    prompt: &PassphrasePrompt,
+    theme: &Theme,
+    lang: Lang,
+) {
     let input = if prompt.unlocking {
-        String::from("  Unlocking…")
+        t(lang, Key::PopupUnlocking).to_string()
     } else {
         masked(&prompt.field)
     };
@@ -1069,9 +975,9 @@ pub fn render_passphrase_prompt(frame: &mut Frame, prompt: &PassphrasePrompt, th
         frame,
         theme,
         SecretPrompt {
-            title: format!(" Unlock SSH key — {} ", prompt.host_name),
+            title: tf(lang, Key::PopupUnlockKeyTitle, &[&prompt.host_name]),
             detail: &prompt.key_path,
-            label: "  Passphrase (kept in memory until OmnySSH exits):",
+            label: t(lang, Key::PopupPassphraseLabel),
             input,
             error: prompt.error.clone(),
             action: ":unlock  ",
@@ -1080,23 +986,28 @@ pub fn render_passphrase_prompt(frame: &mut Frame, prompt: &PassphrasePrompt, th
 }
 
 /// Renders the prompt for a login password a connection waits on.
-pub fn render_password_prompt(frame: &mut Frame, prompt: &PasswordPrompt, theme: &Theme) {
+pub fn render_password_prompt(
+    frame: &mut Frame,
+    prompt: &PasswordPrompt,
+    theme: &Theme,
+    lang: Lang,
+) {
     render_secret_prompt(
         frame,
         theme,
         SecretPrompt {
-            title: format!(" SSH login — {} ", prompt.host_name),
+            title: tf(lang, Key::PopupSshLoginTitle, &[&prompt.host_name]),
             detail: &prompt.login,
-            label: "  Password (kept in memory until OmnySSH exits):",
+            label: t(lang, Key::PopupPasswordLabel),
             input: masked(&prompt.field),
             error: prompt
                 .retry
-                .then(|| String::from("Permission denied, please try again."))
+                .then(|| t(lang, Key::PopupPermissionDenied).to_string())
                 .or_else(|| {
                     prompt
                         .new_host_key
                         .as_ref()
-                        .map(|key| format!("New host key recorded: {key}"))
+                        .map(|key| tf(lang, Key::PopupNewHostKeyRecorded, &[key]))
                 }),
             action: ":log in  ",
         },
@@ -1208,12 +1119,13 @@ pub fn render_quick_execute_input(
     host_name: &str,
     command_field: &FormField,
     theme: &Theme,
+    lang: Lang,
 ) {
     let area = centred_rect(65, 20, frame.area());
     frame.render_widget(Clear, area);
 
     let block = Block::default()
-        .title(format!(" Quick Execute — {} ", host_name))
+        .title(tf(lang, Key::PopupQuickExecuteTitle, &[host_name]))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -1287,6 +1199,7 @@ pub fn render_snippet_results(
     scroll: usize,
     tick_count: u64,
     theme: &Theme,
+    lang: Lang,
 ) {
     let area = centred_rect(80, 85, frame.area());
     frame.render_widget(Clear, area);
@@ -1294,7 +1207,7 @@ pub fn render_snippet_results(
     let spinner = SPINNER_FRAMES[(tick_count as usize / 2) % SPINNER_FRAMES.len()];
 
     let block = Block::default()
-        .title(" Results ")
+        .title(t(lang, Key::PopupResultsTitle))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -1309,7 +1222,7 @@ pub fn render_snippet_results(
 
     if entries.len() == 1 {
         // Single host — full inner area with scrollable text.
-        render_single_result(frame, inner, &entries[0], scroll, spinner, theme);
+        render_single_result(frame, inner, &entries[0], scroll, spinner, theme, lang);
     } else {
         // Multiple hosts — split vertically, one section per host.
         let n = entries.len().min(6); // cap at 6 to avoid tiny sections
@@ -1319,7 +1232,7 @@ pub fn render_snippet_results(
             .constraints(constraints)
             .split(inner);
         for (i, entry) in entries.iter().take(n).enumerate() {
-            render_single_result(frame, sections[i], entry, 0, spinner, theme);
+            render_single_result(frame, sections[i], entry, 0, spinner, theme, lang);
         }
     }
 }
@@ -1332,6 +1245,7 @@ fn render_single_result(
     scroll: usize,
     spinner: char,
     theme: &Theme,
+    lang: Lang,
 ) {
     if area.height < 2 {
         return;
@@ -1347,13 +1261,19 @@ fn render_single_result(
 
     let status_span = if entry.pending {
         Span::styled(
-            format!(" {} Running… ", spinner),
+            tf(lang, Key::PopupResultRunning, &[&spinner.to_string()]),
             Style::default().fg(theme.text_warning),
         )
     } else if entry.output.is_ok() {
-        Span::styled(" ✓ Done ", Style::default().fg(theme.text_success))
+        Span::styled(
+            t(lang, Key::PopupResultDone),
+            Style::default().fg(theme.text_success),
+        )
     } else {
-        Span::styled(" ✗ Error ", Style::default().fg(theme.text_error))
+        Span::styled(
+            t(lang, Key::PopupResultError),
+            Style::default().fg(theme.text_error),
+        )
     };
 
     frame.render_widget(
@@ -1377,7 +1297,7 @@ fn render_single_result(
     let text = match &entry.output {
         Ok(out) if !out.is_empty() => out.as_str(),
         Ok(_) if entry.pending => "",
-        Ok(_) => "(no output)",
+        Ok(_) => t(lang, Key::PopupResultNoOutput),
         Err(err) => err.as_str(),
     };
 
@@ -1417,7 +1337,7 @@ fn render_single_result(
         ])
     } else {
         Line::from(Span::styled(
-            "  Waiting for result…",
+            t(lang, Key::PopupResultWaiting),
             Style::default().fg(theme.text_muted),
         ))
     };
@@ -1701,22 +1621,22 @@ pub fn render_key_setup_progress(
 // ---------------------------------------------------------------------------
 
 /// Label shown on an update-popup button.
-fn update_button_label(button: UpdateButton, can_self_update: bool) -> &'static str {
+fn update_button_label(button: UpdateButton, can_self_update: bool, lang: Lang) -> &'static str {
     match button {
-        UpdateButton::Primary if can_self_update => "Update now",
-        UpdateButton::Primary => "Remind me later",
-        UpdateButton::Skip => "Skip this version",
-        UpdateButton::Disable => "Don't check again",
+        UpdateButton::Primary if can_self_update => t(lang, Key::PopupUpdateNow),
+        UpdateButton::Primary => t(lang, Key::PopupUpdateRemindLater),
+        UpdateButton::Skip => t(lang, Key::PopupUpdateSkip),
+        UpdateButton::Disable => t(lang, Key::PopupUpdateDisable),
     }
 }
 
 /// Renders the startup "update available" popup.
-pub fn render_update(frame: &mut Frame, popup: &UpdatePopup, theme: &Theme) {
+pub fn render_update(frame: &mut Frame, popup: &UpdatePopup, theme: &Theme, lang: Lang) {
     let area = centred_rect(62, 42, frame.area());
     frame.render_widget(Clear, area);
 
     let block = Block::default()
-        .title(" Update Available ")
+        .title(t(lang, Key::PopupUpdateAvailableTitle))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -1739,7 +1659,10 @@ pub fn render_update(frame: &mut Frame, popup: &UpdatePopup, theme: &Theme) {
     let mut lines: Vec<Line> = vec![
         Line::from(""),
         Line::from(vec![
-            Span::styled("  Version  ", Style::default().fg(theme.text_secondary)),
+            Span::styled(
+                t(lang, Key::PopupUpdateVersionLabel),
+                Style::default().fg(theme.text_secondary),
+            ),
             Span::styled(
                 popup.info.current.clone(),
                 Style::default().fg(theme.text_muted),
@@ -1764,16 +1687,16 @@ pub fn render_update(frame: &mut Frame, popup: &UpdatePopup, theme: &Theme) {
         UpdatePopupPhase::Prompt { .. } => {
             if popup.info.can_self_update {
                 lines.push(Line::from(Span::styled(
-                    "  This update can be downloaded and installed now.",
+                    t(lang, Key::PopupUpdateSelfUpdate),
                     info_style,
                 )));
                 lines.push(Line::from(Span::styled(
-                    "  The archive checksum is verified before installing.",
+                    t(lang, Key::PopupUpdateChecksum),
                     Style::default().fg(theme.text_muted),
                 )));
             } else if let Some(cmd) = popup.info.method.upgrade_command() {
                 lines.push(Line::from(Span::styled(
-                    "  Update it with your package manager:",
+                    t(lang, Key::PopupUpdatePackageManager),
                     info_style,
                 )));
                 lines.push(Line::from(""));
@@ -1783,7 +1706,7 @@ pub fn render_update(frame: &mut Frame, popup: &UpdatePopup, theme: &Theme) {
                 )));
             } else {
                 lines.push(Line::from(Span::styled(
-                    "  Download the new release from:",
+                    t(lang, Key::PopupUpdateDownloadFrom),
                     info_style,
                 )));
                 lines.push(Line::from(""));
@@ -1796,7 +1719,7 @@ pub fn render_update(frame: &mut Frame, popup: &UpdatePopup, theme: &Theme) {
         UpdatePopupPhase::Installing => {
             let spinner = SPINNER_FRAMES[(frame.count() / 2) % SPINNER_FRAMES.len()];
             lines.push(Line::from(Span::styled(
-                format!("  {spinner} Downloading and installing — please wait…"),
+                tf(lang, Key::PopupUpdateInstalling, &[&spinner.to_string()]),
                 Style::default().fg(theme.text_warning),
             )));
         }
@@ -1821,7 +1744,7 @@ pub fn render_update(frame: &mut Frame, popup: &UpdatePopup, theme: &Theme) {
     if let UpdatePopupPhase::Prompt { selected } = &popup.phase {
         let mut spans: Vec<Span> = vec![Span::raw("  ")];
         for (i, &button) in UPDATE_BUTTONS.iter().enumerate() {
-            let label = update_button_label(button, popup.info.can_self_update);
+            let label = update_button_label(button, popup.info.can_self_update, lang);
             let style = if i == *selected {
                 Style::default()
                     .fg(theme.form_focused_fg)
@@ -1862,7 +1785,7 @@ pub fn render_update(frame: &mut Frame, popup: &UpdatePopup, theme: &Theme) {
             Span::styled(":dismiss", Style::default().fg(theme.text_muted)),
         ]),
         UpdatePopupPhase::Installing => Line::from(Span::styled(
-            "  Please wait…",
+            t(lang, Key::PopupPleaseWait),
             Style::default()
                 .fg(theme.text_muted)
                 .add_modifier(Modifier::ITALIC),
@@ -1923,7 +1846,7 @@ mod tests {
         let backend = ratatui::backend::TestBackend::new(80, 24);
         let mut terminal = ratatui::Terminal::new(backend).expect("terminal");
         terminal
-            .draw(|frame| render_passphrase_prompt(frame, &prompt, &Theme::default()))
+            .draw(|frame| render_passphrase_prompt(frame, &prompt, &Theme::default(), Lang::En))
             .expect("draw");
         let screen: String = terminal
             .backend()
@@ -1957,7 +1880,7 @@ mod tests {
         let backend = ratatui::backend::TestBackend::new(80, 24);
         let mut terminal = ratatui::Terminal::new(backend).expect("terminal");
         terminal
-            .draw(|frame| render_password_prompt(frame, &prompt, &Theme::default()))
+            .draw(|frame| render_password_prompt(frame, &prompt, &Theme::default(), Lang::En))
             .expect("draw");
         let screen: String = terminal
             .backend()

@@ -7,6 +7,7 @@
   import '@xterm/xterm/css/xterm.css';
   import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import type { Terminal } from '@xterm/xterm';
   import type { FitAddon } from '@xterm/addon-fit';
   import { Channel } from '@tauri-apps/api/core';
@@ -191,7 +192,11 @@
           e.preventDefault();
           if (term?.hasSelection()) {
             navigator.clipboard.writeText(term.getSelection()).catch((err) => {
-              lastError.set(`Copy failed: ${err instanceof Error ? err.message : String(err)}`);
+              lastError.set(
+                $t('terminal.copyFailed', {
+                  values: { error: err instanceof Error ? err.message : String(err) }
+                })
+              );
             });
           }
           return false;
@@ -219,7 +224,11 @@
           term?.input(fallback.data);
         } else {
           terminalPaste().catch((err) => {
-            lastError.set(`Paste failed: ${err instanceof Error ? err.message : String(err)}`);
+            lastError.set(
+              $t('terminal.pasteFailed', {
+                values: { error: err instanceof Error ? err.message : String(err) }
+              })
+            );
           });
         }
         return false;

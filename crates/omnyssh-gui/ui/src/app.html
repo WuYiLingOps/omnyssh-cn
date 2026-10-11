@@ -14,6 +14,18 @@
         } catch (e) {
           document.documentElement.setAttribute('data-theme', 'dark');
         }
+        // Same idea for the UI language: stamp `<html lang>` from the localStorage mirror
+        // so the very first frame is already in the right language. Only the codes the app
+        // ships are accepted; anything else (or a hardened webview that forbids
+        // localStorage) leaves the server-rendered `lang="en"`, which is the fallback the
+        // locale store also uses. The message pack itself is imported synchronously by
+        // `stores/locale.ts`, so no text flashes the raw key in between.
+        try {
+          var l = localStorage.getItem('omnyssh-lang');
+          if (l === 'en' || l === 'zh-Hans') {
+            document.documentElement.setAttribute('lang', l);
+          }
+        } catch (e) {}
         // Reserve the overlay title-bar inset only on macOS (--titlebar-h), where the
         // window uses an overlay title bar with the traffic lights drawn over the app.
         try {

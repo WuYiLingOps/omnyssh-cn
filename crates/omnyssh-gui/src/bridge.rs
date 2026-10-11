@@ -11,7 +11,7 @@ use tauri::{AppHandle, Manager};
 use tauri_specta::Event;
 use tokio::sync::mpsc;
 
-use crate::dto::{FileEntryDto, TransferProgressDto, TunnelStatusDto};
+use crate::dto::{FileEntryDto, KeySetupStepDto, TransferProgressDto, TunnelStatusDto};
 use crate::events;
 use crate::state::GuiState;
 
@@ -101,7 +101,12 @@ pub async fn forward_core_events(
             | CoreEvent::KeySetupFailed(..)
             | CoreEvent::KeySetupFailedUnsafe(..)
             | CoreEvent::KeySetupRollback(..)) => {
-                if let Some(outbound) = map_key_setup_event(event) {
+                // The step's fallback label follows the shell's language; the frontend
+                // translates the step's `code` anyway (§3.7).
+                let lang = app
+                    .try_state::<crate::state::GuiState>()
+                    .map_or_else(crate::i18n::current_lang, |s| s.language());
+                if let Some(outbound) = map_key_setup_event(event, lang) {
                     outbound.emit(&app);
                 }
             }
@@ -141,8 +146,12 @@ impl KeySetupOutbound {
 }
 
 /// Map a core key-setup event to its IPC event (§4.3): the partial and unsafe
-/// variants share the complete / failed events, told apart by their flag.
-fn map_key_setup_event(event: CoreEvent) -> Option<KeySetupOutbound> {
+/// variants share the complete / failed events, told apart by their flag. `lang`
+/// localizes the progress step's fallback label.
+fn map_key_setup_event(
+    event: CoreEvent,
+    lang: omnyssh_core::i18n::Lang,
+) -> Option<KeySetupOutbound> {
     let complete = |host_name, key_path: std::path::PathBuf, password_off| {
         KeySetupOutbound::Complete(events::KeySetupComplete {
             host_name,
@@ -161,7 +170,7 @@ fn map_key_setup_event(event: CoreEvent) -> Option<KeySetupOutbound> {
         CoreEvent::KeySetupProgress(host_name, step) => {
             KeySetupOutbound::Progress(events::KeySetupProgress {
                 host_name,
-                step: step.into(),
+                step: KeySetupStepDto::localized(step, lang),
             })
         }
         CoreEvent::KeySetupComplete(host_name, key_path) => complete(host_name, key_path, true),
@@ -594,7 +603,7 @@ mod tests {
 
     /// The wire payload of a key-setup event as JSON.
     fn key_setup_json(event: CoreEvent) -> serde_json::Value {
-        match map_key_setup_event(event).expect("a key-setup event") {
+        match map_key_setup_event(event, omnyssh_core::i18n::Lang::En).expect("a key-setup event") {
             KeySetupOutbound::Progress(e) => serde_json::to_value(e),
             KeySetupOutbound::Complete(e) => serde_json::to_value(e),
             KeySetupOutbound::Failed(e) => serde_json::to_value(e),
@@ -629,6 +638,9 @@ mod tests {
             key_setup_json(CoreEvent::KeySetupRollback("web".into(), "restored".into())),
             serde_json::json!({ "hostName": "web", "result": "restored" })
         );
-        assert!(map_key_setup_event(CoreEvent::Error("x".into())).is_none());
+        assert!(
+            map_key_setup_event(CoreEvent::Error("x".into()), omnyssh_core::i18n::Lang::En)
+                .is_none()
+        );
     }
 }

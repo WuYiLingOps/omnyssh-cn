@@ -232,10 +232,13 @@ describe('sftp reducers', () => {
     s = applyOpDone(s, false, "open 'a.txt': Permission denied");
     s = applyOpDone(s, false, CANCELLED);
     expect(s.error).toBe("open 'a.txt': Permission denied");
+    // The kept error is a real failure, not the cancel, so the flag stays off.
+    expect(s.cancelled).toBeUndefined();
 
-    // A cancel on its own still says so.
+    // A cancel on its own still says so, and marks itself as a cancel (not a failure).
     s = applyOpDone({ ...newSession('web-1'), pending: [upload('c.txt')] }, false, CANCELLED);
     expect(s.error).toBe(CANCELLED);
+    expect(s.cancelled).toBe(true);
   });
 
   it('correlates a two-file batch by FIFO order across progress + op-done', () => {

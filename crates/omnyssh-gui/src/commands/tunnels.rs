@@ -14,9 +14,7 @@ pub async fn tunnel_start(
     host_name: String,
     state: State<'_, GuiState>,
 ) -> Result<(), CommandError> {
-    state
-        .start_tunnel(&host_name)
-        .map_err(|message| CommandError { message })
+    state.start_tunnel(&host_name).map_err(CommandError::plain)
 }
 
 /// Stop `hostName`'s tunnel. A no-op when none runs.

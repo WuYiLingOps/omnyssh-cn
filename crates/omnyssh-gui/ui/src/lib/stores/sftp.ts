@@ -57,6 +57,9 @@ export interface SftpSession {
   preview?: Preview;
   /** The last operation error, surfaced in the UI until the next successful action. */
   error?: string;
+  /** Set when `error` is the user's own cancel rather than a failure, so the UI can
+   *  show it as news and translate it (`error` itself is the core's own wording). */
+  cancelled?: boolean;
   /** Pane(s) to re-list once `pending` drains (a mutation changed the FS); the
    *  component performs the listing and clears this. */
   refresh?: PaneSide | 'both';
@@ -233,16 +236,18 @@ export function applyOpDone(session: SftpSession, ok: boolean, error?: string): 
   if (session.pending.length === 0) return session;
   const [front, ...rest] = session.pending;
   const wasTransfer = front.kind === 'upload' || front.kind === 'download';
+  const cancelled = error === CANCELLED;
   // A later op's success must NOT wipe an earlier op's failure in the same batch — that
   // silently masks e.g. a non-empty-folder delete beside a deleted sibling. Nor may the
   // user's own cancel. The error persists until the next batch clears it (`clearError`,
   // called on enqueue).
-  const keep = ok || (error === CANCELLED && session.error != null);
+  const keep = ok || (cancelled && session.error != null);
   return {
     ...session,
     pending: rest,
     refresh: mergeRefresh(session.refresh, front.refresh),
     error: keep ? session.error : (error ?? 'Operation failed'),
+    cancelled: keep ? session.cancelled : cancelled || undefined,
     transfer: wasTransfer ? undefined : session.transfer
   };
 }
@@ -304,14 +309,14 @@ function createSftp() {
     /** Drop the surfaced op error — called when a new batch is enqueued, so a fresh
      *  action starts clean while a finished batch's error still lingered until now. */
     clearError(id: number): void {
-      mut(id, (s) => ({ ...s, error: undefined }));
+      mut(id, (s) => ({ ...s, error: undefined, cancelled: undefined }));
     },
     /** A soft error (e.g. a failed listing reported as `sftp-disconnected`, §4.3). The
      *  core emits it only for a remote `ListDir`, so clear just the remote pane's loading
      *  (leaving it set strands it on "Loading…"); a legit in-flight local listing keeps
      *  its own spinner. */
     sessionError(id: number, error: string): void {
-      mut(id, (s) => ({ ...s, error, remote: { ...s.remote, loading: false } }));
+      mut(id, (s) => ({ ...s, error, cancelled: undefined, remote: { ...s.remote, loading: false } }));
     },
     remove(id: number): void {
       update((m) => {

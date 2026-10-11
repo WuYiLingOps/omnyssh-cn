@@ -61,29 +61,32 @@ pub enum SnippetPopup {
     },
 }
 
-/// Labels for each field in the snippet add/edit form.
-pub const SNIPPET_FORM_FIELD_LABELS: &[&str] = &[
-    "Name",
-    "Command",
-    "Scope (global / host)",
-    "Host (if scope=host)",
-    "Tags (comma-sep)",
-    "Params (comma-sep)",
-];
+/// Labels for each field in the snippet add/edit form, in `lang`.
+pub fn snippet_form_field_labels(lang: crate::i18n::Lang) -> Vec<&'static str> {
+    use crate::i18n::{t, Key};
+    vec![
+        t(lang, Key::SnippetFormName),
+        t(lang, Key::SnippetFormCommand),
+        t(lang, Key::SnippetFormScope),
+        t(lang, Key::SnippetFormHost),
+        t(lang, Key::SnippetFormTags),
+        t(lang, Key::SnippetFormParams),
+    ]
+}
 
 /// The snippet add/edit form.
 #[derive(Debug, Clone)]
 pub struct SnippetForm {
-    /// Parallel to `SNIPPET_FORM_FIELD_LABELS`.
+    /// Parallel to `snippet_form_field_labels`.
     pub fields: Vec<FormField>,
     pub focused_field: usize,
 }
 
 impl SnippetForm {
     /// Creates an empty form for adding a new snippet.
-    pub fn empty() -> Self {
+    pub fn empty(lang: crate::i18n::Lang) -> Self {
         Self {
-            fields: SNIPPET_FORM_FIELD_LABELS
+            fields: snippet_form_field_labels(lang)
                 .iter()
                 .map(|_| FormField::default())
                 .collect(),
@@ -92,8 +95,8 @@ impl SnippetForm {
     }
 
     /// Creates a form pre-filled from an existing snippet (for editing).
-    pub fn from_snippet(s: &Snippet) -> Self {
-        let mut form = Self::empty();
+    pub fn from_snippet(s: &Snippet, lang: crate::i18n::Lang) -> Self {
+        let mut form = Self::empty(lang);
         form.fields[0] = FormField::with_value(&s.name);
         form.fields[1] = FormField::with_value(&s.command);
         form.fields[2] = FormField::with_value(match s.scope {
@@ -110,15 +113,16 @@ impl SnippetForm {
     ///
     /// # Errors
     /// Returns a human-readable error string if validation fails.
-    pub fn to_snippet(&self) -> Result<Snippet, String> {
+    pub fn to_snippet(&self, lang: crate::i18n::Lang) -> Result<Snippet, String> {
+        use crate::i18n::{t, Key};
         let name = self.fields[0].value.trim().to_string();
         if name.is_empty() {
-            return Err("Name cannot be empty".to_string());
+            return Err(t(lang, Key::ErrNameEmpty).to_string());
         }
 
         let command = self.fields[1].value.trim().to_string();
         if command.is_empty() {
-            return Err("Command cannot be empty".to_string());
+            return Err(t(lang, Key::ErrSnippetCommandEmpty).to_string());
         }
 
         let scope_str = self.fields[2].value.trim().to_lowercase();
@@ -130,7 +134,7 @@ impl SnippetForm {
         let host = {
             let v = self.fields[3].value.trim();
             if scope == SnippetScope::Host && v.is_empty() {
-                return Err("Host cannot be empty when scope is 'host'".to_string());
+                return Err(t(lang, Key::ErrSnippetHostEmpty).to_string());
             }
             if v.is_empty() {
                 None
@@ -346,12 +350,13 @@ impl App {
         };
 
         // Spawn one task per host.
+        let lang = self.view.lang;
         for host in hosts {
             let tx = self.core_tx.clone();
             let cmd = command.clone();
             let sname = snippet.name.clone();
             tokio::spawn(async move {
-                let result = run_command_on_host(&host, &cmd).await;
+                let result = run_command_on_host(lang, &host, &cmd).await;
                 let _ = tx
                     .send(CoreEvent::SnippetResult {
                         host_name: host.name.clone(),
@@ -373,7 +378,10 @@ impl App {
                 ..
             }) => {
                 if selected_host_indices.is_empty() {
-                    self.view.status_message = Some("No hosts selected.".to_string());
+                    self.view.status_message = Some(
+                        crate::i18n::t(self.view.lang, crate::i18n::Key::StatusNoHostsSelected)
+                            .to_string(),
+                    );
                     return;
                 }
                 let host_names: Vec<String> = {
@@ -404,7 +412,11 @@ impl App {
                 entries: vec![SnippetResultEntry {
                     host_name: host_name.clone(),
                     snippet_name: "(quick-execute)".to_string(),
-                    output: Err(format!("Host '{}' not found.", host_name)),
+                    output: Err(crate::i18n::tf(
+                        self.view.lang,
+                        crate::i18n::Key::StatusHostNotFound,
+                        &[&host_name],
+                    )),
                     pending: false,
                 }],
                 scroll: 0,
@@ -425,8 +437,9 @@ impl App {
 
         let tx = self.core_tx.clone();
         let cmd = command.clone();
+        let lang = self.view.lang;
         tokio::spawn(async move {
-            let result = run_command_on_host(&host, &cmd).await;
+            let result = run_command_on_host(lang, &host, &cmd).await;
             let _ = tx
                 .send(CoreEvent::SnippetResult {
                     host_name: host.name.clone(),
@@ -457,7 +470,11 @@ impl App {
                 entries: vec![SnippetResultEntry {
                     host_name: host_name.clone(),
                     snippet_name: format!("Quick View: {:?}", service_kind),
-                    output: Err("No host selected.".to_string()),
+                    output: Err(crate::i18n::t(
+                        self.view.lang,
+                        crate::i18n::Key::StatusNoHostSelected,
+                    )
+                    .to_string()),
                     pending: false,
                 }],
                 scroll: 0,
@@ -503,8 +520,9 @@ impl App {
         let tx = self.core_tx.clone();
         let cmd = command.to_string();
         let sname = format!("Quick View: {}", service_name);
+        let lang = self.view.lang;
         tokio::spawn(async move {
-            let result = run_command_on_host(&host, &cmd).await;
+            let result = run_command_on_host(lang, &host, &cmd).await;
             let _ = tx
                 .send(CoreEvent::SnippetResult {
                     host_name: host.name.clone(),
@@ -518,7 +536,7 @@ impl App {
     /// Confirms the snippet add/edit form and saves.
     pub(crate) async fn handle_confirm_snippet_form(&mut self) {
         match self.view.snippets_view.popup.take() {
-            Some(SnippetPopup::Add(form)) => match form.to_snippet() {
+            Some(SnippetPopup::Add(form)) => match form.to_snippet(self.view.lang) {
                 Ok(snippet) => {
                     {
                         let mut state = self.state.write().await;
@@ -528,33 +546,50 @@ impl App {
                     let state = self.state.read().await;
                     let q = self.view.snippets_view.search_query.clone();
                     self.view.snippets_view.rebuild_filter(&state.snippets, &q);
-                    self.view.status_message = Some("Snippet added.".to_string());
+                    self.view.status_message = Some(
+                        crate::i18n::t(self.view.lang, crate::i18n::Key::StatusSnippetAdded)
+                            .to_string(),
+                    );
                 }
                 Err(e) => {
                     self.view.snippets_view.popup = Some(SnippetPopup::Add(form));
-                    self.view.status_message = Some(format!("Error: {e}"));
+                    self.view.status_message = Some(crate::i18n::tf(
+                        self.view.lang,
+                        crate::i18n::Key::StatusError,
+                        &[&e],
+                    ));
                 }
             },
 
-            Some(SnippetPopup::Edit { snippet_idx, form }) => match form.to_snippet() {
-                Ok(snippet) => {
-                    {
-                        let mut state = self.state.write().await;
-                        if let Some(slot) = state.snippets.get_mut(snippet_idx) {
-                            *slot = snippet;
+            Some(SnippetPopup::Edit { snippet_idx, form }) => {
+                match form.to_snippet(self.view.lang) {
+                    Ok(snippet) => {
+                        {
+                            let mut state = self.state.write().await;
+                            if let Some(slot) = state.snippets.get_mut(snippet_idx) {
+                                *slot = snippet;
+                            }
                         }
+                        self.save_snippets().await;
+                        let state = self.state.read().await;
+                        let q = self.view.snippets_view.search_query.clone();
+                        self.view.snippets_view.rebuild_filter(&state.snippets, &q);
+                        self.view.status_message = Some(
+                            crate::i18n::t(self.view.lang, crate::i18n::Key::StatusSnippetUpdated)
+                                .to_string(),
+                        );
                     }
-                    self.save_snippets().await;
-                    let state = self.state.read().await;
-                    let q = self.view.snippets_view.search_query.clone();
-                    self.view.snippets_view.rebuild_filter(&state.snippets, &q);
-                    self.view.status_message = Some("Snippet updated.".to_string());
+                    Err(e) => {
+                        self.view.snippets_view.popup =
+                            Some(SnippetPopup::Edit { snippet_idx, form });
+                        self.view.status_message = Some(crate::i18n::tf(
+                            self.view.lang,
+                            crate::i18n::Key::StatusError,
+                            &[&e],
+                        ));
+                    }
                 }
-                Err(e) => {
-                    self.view.snippets_view.popup = Some(SnippetPopup::Edit { snippet_idx, form });
-                    self.view.status_message = Some(format!("Error: {e}"));
-                }
-            },
+            }
 
             other => {
                 self.view.snippets_view.popup = other;
@@ -569,7 +604,11 @@ impl App {
                 let mut state = self.state.write().await;
                 if idx < state.snippets.len() {
                     let removed = state.snippets.remove(idx);
-                    self.view.status_message = Some(format!("Deleted snippet '{}'.", removed.name));
+                    self.view.status_message = Some(crate::i18n::tf(
+                        self.view.lang,
+                        crate::i18n::Key::StatusSnippetDeleted,
+                        &[&removed.name],
+                    ));
                 }
             }
             self.save_snippets().await;
@@ -583,7 +622,11 @@ impl App {
     async fn save_snippets(&mut self) {
         let snippets = self.state.read().await.snippets.clone();
         if let Err(e) = config::snippets::save_snippets(&snippets) {
-            self.view.status_message = Some(format!("Save failed: {e}"));
+            self.view.status_message = Some(crate::i18n::tf(
+                self.view.lang,
+                crate::i18n::Key::StatusSaveFailed,
+                &[&e.to_string()],
+            ));
         }
     }
 }
@@ -597,14 +640,17 @@ impl App {
 ///
 /// A new connection is opened for each invocation.  Connection pooling with
 /// the metrics poller is a future optimisation.
-async fn run_command_on_host(host: &Host, command: &str) -> Result<String, String> {
-    let session = SshSession::connect(host)
-        .await
-        .map_err(|e| format!("Connect failed: {e}"))?;
-    let output = session
-        .run_command(command)
-        .await
-        .map_err(|e| format!("Command failed: {e}"))?;
+async fn run_command_on_host(
+    lang: crate::i18n::Lang,
+    host: &Host,
+    command: &str,
+) -> Result<String, String> {
+    let session = SshSession::connect(host).await.map_err(|e| {
+        crate::i18n::tf(lang, crate::i18n::Key::ErrConnectFailed, &[&format!("{e}")])
+    })?;
+    let output = session.run_command(command).await.map_err(|e| {
+        crate::i18n::tf(lang, crate::i18n::Key::ErrCommandFailed, &[&format!("{e}")])
+    })?;
     let _ = session.disconnect().await;
     Ok(output)
 }
@@ -629,6 +675,7 @@ pub(crate) fn substitute_params(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::i18n::Lang;
 
     fn s(v: &str) -> String {
         v.to_string()
@@ -710,9 +757,9 @@ mod tests {
         assert_eq!(out, "v");
     }
 
-    /// Builds a snippet form from the 6 field values, in `SNIPPET_FORM_FIELD_LABELS` order.
+    /// Builds a snippet form from the 6 field values, in `snippet_form_field_labels` order.
     fn snippet_form(values: [&str; 6]) -> SnippetForm {
-        let mut form = SnippetForm::empty();
+        let mut form = SnippetForm::empty(Lang::En);
         for (i, v) in values.iter().enumerate() {
             form.fields[i] = FormField::with_value(*v);
         }
@@ -739,21 +786,21 @@ mod tests {
     #[test]
     fn to_snippet_empty_name_errs() {
         assert!(snippet_form(["", "cmd", "global", "", "", ""])
-            .to_snippet()
+            .to_snippet(Lang::En)
             .is_err());
     }
 
     #[test]
     fn to_snippet_empty_command_errs() {
         assert!(snippet_form(["n", "", "global", "", "", ""])
-            .to_snippet()
+            .to_snippet(Lang::En)
             .is_err());
     }
 
     #[test]
     fn to_snippet_scope_defaults_global() {
         let snip = snippet_form(["n", "cmd", "", "", "", ""])
-            .to_snippet()
+            .to_snippet(Lang::En)
             .unwrap();
         assert_eq!(snip.scope, SnippetScope::Global);
     }
@@ -761,7 +808,7 @@ mod tests {
     #[test]
     fn to_snippet_scope_host_explicit() {
         let snip = snippet_form(["n", "cmd", "host", "web", "", ""])
-            .to_snippet()
+            .to_snippet(Lang::En)
             .unwrap();
         assert_eq!(snip.scope, SnippetScope::Host);
     }
@@ -769,7 +816,7 @@ mod tests {
     #[test]
     fn to_snippet_scope_case_insensitive() {
         let snip = snippet_form(["n", "cmd", "HOST", "web", "", ""])
-            .to_snippet()
+            .to_snippet(Lang::En)
             .unwrap();
         assert_eq!(snip.scope, SnippetScope::Host);
     }
@@ -777,14 +824,14 @@ mod tests {
     #[test]
     fn to_snippet_host_required_when_scope_host() {
         assert!(snippet_form(["n", "cmd", "host", "", "", ""])
-            .to_snippet()
+            .to_snippet(Lang::En)
             .is_err());
     }
 
     #[test]
     fn to_snippet_host_kept_when_scope_global() {
         let snip = snippet_form(["n", "cmd", "global", "web", "", ""])
-            .to_snippet()
+            .to_snippet(Lang::En)
             .unwrap();
         assert_eq!(snip.host.as_deref(), Some("web"));
     }
@@ -792,7 +839,7 @@ mod tests {
     #[test]
     fn to_snippet_tags_params_split_and_trimmed() {
         let snip = snippet_form(["n", "cmd", "global", "", "a, b ,,", "p1, p2"])
-            .to_snippet()
+            .to_snippet(Lang::En)
             .unwrap();
         assert_eq!(snip.tags, Some(vec!["a".to_string(), "b".to_string()]));
         assert_eq!(snip.params, Some(vec!["p1".to_string(), "p2".to_string()]));
@@ -801,7 +848,7 @@ mod tests {
     #[test]
     fn to_snippet_tags_params_none_when_empty() {
         let snip = snippet_form(["n", "cmd", "global", "", "", ""])
-            .to_snippet()
+            .to_snippet(Lang::En)
             .unwrap();
         assert!(snip.tags.is_none());
         assert!(snip.params.is_none());

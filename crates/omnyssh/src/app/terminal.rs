@@ -61,21 +61,22 @@ pub struct TermTab {
 /// Written under a session's last output when it ends, byte for byte as in the
 /// GUI: dim, then the cursor hidden and any mouse reporting the dead app left on
 /// turned off, since the tab takes no more input.
-const END_LINE: &[u8] = b"\r\n\x1b[2m[Connection closed. Press Enter to close this tab.]\x1b[0m\
-    \x1b[?25l\x1b[?9;1000;1002;1003l";
+pub fn end_line(lang: crate::i18n::Lang) -> &'static [u8] {
+    crate::i18n::t(lang, crate::i18n::Key::TerminalEndLine).as_bytes()
+}
 
 impl TermTab {
     /// Marks the tab ended and writes the end line under its output, so whatever
     /// the server said last stays readable. `false` for a tab that never showed
     /// anything (a failed connect): there is nothing to keep.
-    pub fn end(&mut self) -> bool {
+    pub fn end(&mut self, lang: crate::i18n::Lang) -> bool {
         if !self.saw_output {
             return false;
         }
         let Ok(mut parser) = self.parser.lock() else {
             return false;
         };
-        parser.process(END_LINE);
+        parser.process(end_line(lang));
         self.ended = true;
         true
     }
@@ -223,7 +224,10 @@ impl App {
         }
         if tv.tabs.is_empty() {
             self.state.write().await.screen = Screen::Dashboard;
-            self.view.status_message = Some("SSH session closed.".to_string());
+            self.view.status_message = Some(
+                crate::i18n::t(self.view.lang, crate::i18n::Key::StatusSshSessionClosed)
+                    .to_string(),
+            );
         } else {
             tv.active_tab = tv.active_tab.min(tv.tabs.len().saturating_sub(1));
         }
@@ -239,7 +243,9 @@ impl App {
             state.hosts.get(host_idx).cloned()
         };
         let Some(host) = host else {
-            self.view.status_message = Some("No such host.".to_string());
+            self.view.status_message = Some(
+                crate::i18n::t(self.view.lang, crate::i18n::Key::StatusNoSuchHost).to_string(),
+            );
             return;
         };
         let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
@@ -276,7 +282,11 @@ impl App {
                 );
             }
             Err(e) => {
-                self.view.status_message = Some(format!("PTY error: {e}"));
+                self.view.status_message = Some(crate::i18n::tf(
+                    self.view.lang,
+                    crate::i18n::Key::StatusPtyError,
+                    &[&e.to_string()],
+                ));
             }
         }
     }
@@ -289,7 +299,9 @@ impl App {
             state.hosts.get(host_idx).cloned()
         };
         let Some(host) = host else {
-            self.view.status_message = Some("No such host.".to_string());
+            self.view.status_message = Some(
+                crate::i18n::t(self.view.lang, crate::i18n::Key::StatusNoSuchHost).to_string(),
+            );
             return;
         };
 
@@ -352,7 +364,11 @@ impl App {
                 );
             }
             Err(e) => {
-                self.view.status_message = Some(format!("PTY error: {e}"));
+                self.view.status_message = Some(crate::i18n::tf(
+                    self.view.lang,
+                    crate::i18n::Key::StatusPtyError,
+                    &[&e.to_string()],
+                ));
             }
         }
     }
@@ -361,6 +377,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::i18n::Lang;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     fn tab(session_id: SessionId) -> TermTab {
@@ -480,7 +497,7 @@ mod tests {
     #[test]
     fn a_tab_that_showed_output_ends_under_the_end_line() {
         let mut tab = spoke(1, "Permission denied, please try again.");
-        assert!(tab.end());
+        assert!(tab.end(Lang::En));
         assert!(tab.ended);
         let text = screen_text(&tab);
         assert!(text.contains("Permission denied, please try again."));
@@ -492,7 +509,7 @@ mod tests {
     #[test]
     fn a_blank_tab_is_not_kept() {
         let mut tab = tab(2);
-        assert!(!tab.end());
+        assert!(!tab.end(Lang::En));
         assert!(!tab.ended);
         assert!(screen_text(&tab).trim().is_empty());
     }
@@ -502,7 +519,7 @@ mod tests {
     fn a_tab_cleared_before_the_exit_is_kept() {
         let mut tab = spoke(3, "bye\x1b[2J\x1b[H");
         assert!(screen_text(&tab).trim().is_empty());
-        assert!(tab.end());
+        assert!(tab.end(Lang::En));
     }
 
     #[tokio::test]
@@ -597,7 +614,7 @@ mod tests {
         let mut tab = spoke(1, "\x1b[?1002htop");
         let mode = |tab: &TermTab| tab.parser.lock().unwrap().screen().mouse_protocol_mode();
         assert_ne!(mode(&tab), vt100::MouseProtocolMode::None);
-        assert!(tab.end());
+        assert!(tab.end(Lang::En));
         assert_eq!(mode(&tab), vt100::MouseProtocolMode::None);
     }
 

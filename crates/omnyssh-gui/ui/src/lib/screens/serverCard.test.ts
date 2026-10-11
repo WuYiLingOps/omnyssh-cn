@@ -109,9 +109,9 @@ describe('deriveCard — health state', () => {
     const card = deriveCard(host(), CONNECTED, metrics({ diskPercent: 90 }), undefined);
     expect(card.overall).toBe('crit');
     expect(card.metricRows).toEqual([
-      { label: 'CPU', percent: null, status: 'unknown' },
-      { label: 'RAM', percent: null, status: 'unknown' },
-      { label: 'Disk', percent: 90, status: 'crit' }
+      { labelKey: 'metric.cpu', percent: null, status: 'unknown' },
+      { labelKey: 'metric.ram', percent: null, status: 'unknown' },
+      { labelKey: 'metric.disk', percent: 90, status: 'crit' }
     ]);
   });
 
@@ -141,8 +141,8 @@ describe('deriveCard — detected services', () => {
     };
     const card = deriveCard(host(), CONNECTED, undefined, svc);
     expect(card.detectedServices).toEqual([
-      { kind: 'docker', name: 'Docker', detail: '6/7 running' },
-      { kind: 'postgresql', name: 'PostgreSQL', detail: '' }
+      { kind: 'docker', nameKey: 'service.docker', detail: { key: 'service.running', values: { running: '6', total: '7' } } },
+      { kind: 'postgresql', nameKey: 'service.postgresql', detail: undefined }
     ]);
     expect(card.servicesError).toBeUndefined();
   });
@@ -152,12 +152,19 @@ describe('deriveCard — detected services', () => {
       kind: 'detected',
       services: [{ kind: 'docker', metrics: [{ name: 'containers_total', value: 3 }, { name: 'containers_running', value: 0 }] }]
     };
-    expect(deriveCard(host(), CONNECTED, undefined, svc).detectedServices[0].detail).toBe('0/3 running');
+    expect(deriveCard(host(), CONNECTED, undefined, svc).detectedServices[0].detail).toEqual({
+      key: 'service.running',
+      values: { running: '0', total: '3' }
+    });
   });
 
-  it('shows no docker detail until its quick-scan metrics arrive', () => {
-    const svc: HostServices = { kind: 'detected', services: [{ kind: 'docker', metrics: [] }] };
-    expect(deriveCard(host(), CONNECTED, undefined, svc).detectedServices[0].detail).toBe('');
+  it('shows no docker detail until its quick-scan metrics arrive, and none with no containers', () => {
+    const none: HostServices = { kind: 'detected', services: [{ kind: 'docker', metrics: [] }] };
+    expect(deriveCard(host(), CONNECTED, undefined, none).detectedServices[0].detail).toBeUndefined();
+    const zero: HostServices = { kind: 'detected', services: [{ kind: 'docker', metrics: [{ name: 'containers_total', value: 0 }] }] };
+    expect(deriveCard(host(), CONNECTED, undefined, zero).detectedServices[0].detail).toEqual({
+      key: 'service.noContainers'
+    });
   });
 
   it('surfaces a discovery failure and shows no service chips', () => {
@@ -431,20 +438,22 @@ describe('deriveTunnel — the card\'s tunnel block', () => {
   });
 
   it('reads as off until a status arrives, and after a stop', () => {
-    expect(deriveTunnel(forwarded(), undefined)).toMatchObject({ running: false, label: 'Off', dot: 'unknown' });
+    expect(deriveTunnel(forwarded(), undefined)).toMatchObject({ running: false, labelKey: 'tunnel.off', dot: 'unknown' });
   });
 
   it('tells running states from ended ones', () => {
-    expect(deriveTunnel(forwarded(), { kind: 'connecting' })).toMatchObject({ running: true, dot: 'unknown' });
-    expect(deriveTunnel(forwarded(), { kind: 'up' })).toMatchObject({ running: true, dot: 'ok', label: 'Active' });
+    expect(deriveTunnel(forwarded(), { kind: 'connecting' })).toMatchObject({ running: true, dot: 'unknown', labelKey: 'tunnel.connecting' });
+    expect(deriveTunnel(forwarded(), { kind: 'up' })).toMatchObject({ running: true, dot: 'ok', labelKey: 'tunnel.active' });
     expect(deriveTunnel(forwarded(), { kind: 'retrying', message: 'connection lost' })).toMatchObject({
       running: true,
       dot: 'warn',
+      labelKey: 'tunnel.reconnecting',
       message: 'connection lost'
     });
     expect(deriveTunnel(forwarded(), { kind: 'failed', message: 'port 9443 in use' })).toMatchObject({
       running: false,
       dot: 'off',
+      labelKey: 'tunnel.failed',
       message: 'port 9443 in use'
     });
   });
@@ -452,7 +461,7 @@ describe('deriveTunnel — the card\'s tunnel block', () => {
   it('rides along on a reachability card too — a port check still has SSH credentials', () => {
     const card = deriveCard({ ...forwarded(), monitoring: 'tcpPort' }, CONNECTED, undefined, undefined, { kind: 'up' });
     expect(card.reachability).toBe('reachable');
-    expect(card.tunnel?.label).toBe('Active');
+    expect(card.tunnel?.labelKey).toBe('tunnel.active');
   });
 
   it('labels where a forward listens', () => {

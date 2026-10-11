@@ -3,6 +3,7 @@
   // more hosts to run on (broadcast), then execute. Host references show their live
   // status dot via the shared server-state palette. Semantic tokens only.
   import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import type { SnippetDto } from '$lib/bindings';
   import { Button, StatusDot, Icon } from '$lib/theme';
   import Modal from '$lib/components/Modal.svelte';
@@ -65,16 +66,16 @@
     'focus-visible:ring-2 focus-visible:ring-focus placeholder:text-faint';
 </script>
 
-<Modal label="Run snippet" onClose={onCancel}>
+<Modal label={$t('snippetRunner.title')} onClose={onCancel}>
   <header class="border-b border-default px-5 py-3.5">
-    <h2 class="truncate text-sm font-semibold">Run “{snippet.name}”</h2>
+    <h2 class="truncate text-sm font-semibold">{$t('snippetRunner.heading', { values: { name: snippet.name } })}</h2>
     <p class="mt-0.5 truncate font-mono text-xs text-faint">{snippet.command}</p>
   </header>
 
   <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
     {#if params.length}
       <div class="space-y-3">
-        <h3 class="text-[11px] font-medium uppercase tracking-[0.18em] text-faint">Parameters</h3>
+        <h3 class="text-[11px] font-medium uppercase tracking-[0.18em] text-faint">{$t('snippetRunner.parameters')}</h3>
         <!-- Keyed by position: params come from snippets.toml unchanged and the core
              never dedups them, so a name key could throw each_key_duplicate. -->
         {#each params as name, i (i)}
@@ -88,10 +89,10 @@
 
     <div class="space-y-2">
       <h3 class="text-[11px] font-medium uppercase tracking-[0.18em] text-faint">
-        Run on {selected.size} of {choices.length}
+        {$t('snippetRunner.runOn', { values: { selected: String(selected.size), total: String(choices.length) } })}
       </h3>
       {#if $hosts.length === 0}
-        <p class="text-sm text-muted">No hosts configured.</p>
+        <p class="text-sm text-muted">{$t('snippetRunner.noHosts')}</p>
       {:else}
         <ul class="space-y-1">
           {#each choices as host (host.name)}
@@ -124,9 +125,9 @@
   </div>
 
   <footer class="flex justify-end gap-2 border-t border-default px-5 py-3">
-    <Button variant="ghost" onclick={onCancel}>Cancel</Button>
+    <Button variant="ghost" onclick={onCancel}>{$t('snippetRunner.cancel')}</Button>
     <Button variant="primary" onclick={run} disabled={selected.size === 0}>
-      Run on {selected.size} {selected.size === 1 ? 'host' : 'hosts'}
+      {$t('snippetRunner.runOnCount', { values: { count: selected.size } })}
     </Button>
   </footer>
 </Modal>

@@ -11,6 +11,7 @@ use ratatui::{
     Frame,
 };
 
+use crate::i18n::{t, tf, Key, Lang};
 use crate::ui::theme::threshold_color;
 use crate::ui::theme::Theme;
 use omnyssh_core::event::{DetectedService, Metrics, ServiceKind};
@@ -77,15 +78,31 @@ pub struct CardData<'a> {
 
 /// The reachability line shown in place of the metric rows. Naming the probed
 /// port matters: a green line for port 8443 says nothing about SSH on 22.
-fn reachability_line(status: Option<&ConnectionStatus>, port: Option<u16>) -> (String, Color) {
-    let (state, color) = match status {
-        Some(ConnectionStatus::Connected) => ("reachable", Color::Green),
-        Some(ConnectionStatus::Failed(_)) => ("unreachable", Color::Red),
-        _ => ("checking", Color::DarkGray),
+fn reachability_line(
+    status: Option<&ConnectionStatus>,
+    port: Option<u16>,
+    lang: Lang,
+) -> (String, Color) {
+    let (key_plain, key_port, color) = match status {
+        Some(ConnectionStatus::Connected) => (
+            Key::CardReachReachable,
+            Key::CardReachReachablePort,
+            Color::Green,
+        ),
+        Some(ConnectionStatus::Failed(_)) => (
+            Key::CardReachUnreachable,
+            Key::CardReachUnreachablePort,
+            Color::Red,
+        ),
+        _ => (
+            Key::CardReachChecking,
+            Key::CardReachCheckingPort,
+            Color::DarkGray,
+        ),
     };
     let text = match port {
-        Some(p) => format!("─── {state} :{p} ───"),
-        None => format!("─── {state} ───"),
+        Some(p) => tf(lang, key_port, &[&p.to_string()]),
+        None => t(lang, key_plain).to_string(),
     };
     (text, color)
 }
@@ -100,6 +117,7 @@ pub fn render_card(
     data: &CardData<'_>,
     is_selected: bool,
     theme: &Theme,
+    lang: Lang,
 ) {
     let host_name = data.host_name;
     let hostname = data.hostname;
@@ -203,7 +221,7 @@ pub fn render_card(
 
     if data.monitoring != MonitorMode::Ssh {
         // Reachability host: no metrics exist, so the tiles would be a fiction.
-        let (text, color) = reachability_line(status, data.monitor_port);
+        let (text, color) = reachability_line(status, data.monitor_port, lang);
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(text, Style::default().fg(color)))),
             rows[1],
@@ -212,7 +230,7 @@ pub fn render_card(
         // Rows 1-2: offline message
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
-                "─── offline ───",
+                t(lang, Key::CardOffline),
                 Style::default().fg(Color::Red),
             ))),
             rows[1],
@@ -230,7 +248,7 @@ pub fn render_card(
         let disk = metrics.and_then(|m| m.disk_percent);
         let uptime_str = metrics.and_then(|m| m.uptime.as_deref()).unwrap_or("");
         frame.render_widget(
-            Paragraph::new(render_disk_uptime_line(disk, uptime_str, inner.width)),
+            Paragraph::new(render_disk_uptime_line(disk, uptime_str, inner.width, lang)),
             rows[2],
         );
     }
@@ -249,7 +267,7 @@ pub fn render_card(
     // Use TWO lines for services to avoid "+N" overflow
     if let Some(services) = data.services {
         if !services.is_empty() {
-            let service_lines = render_services_lines(services, inner.width, 2);
+            let service_lines = render_services_lines(services, inner.width, 2, lang);
             for (i, line) in service_lines.iter().enumerate() {
                 if i < 2 {
                     frame.render_widget(Paragraph::new(line.clone()), rows[4 + i]);
@@ -340,7 +358,12 @@ fn render_cpu_ram_line(cpu: Option<f64>, ram: Option<f64>, _width: u16) -> Line<
 }
 
 /// Render Disk + Uptime on one line: "DSK: ████░░ 61%  Up: 43 days"
-fn render_disk_uptime_line(disk: Option<f64>, uptime: &str, _width: u16) -> Line<'static> {
+fn render_disk_uptime_line(
+    disk: Option<f64>,
+    uptime: &str,
+    _width: u16,
+    lang: Lang,
+) -> Line<'static> {
     let mut spans = Vec::new();
 
     // Disk part with compact bar
@@ -373,7 +396,7 @@ fn render_disk_uptime_line(disk: Option<f64>, uptime: &str, _width: u16) -> Line
 
     // Uptime part - no truncation, always show full uptime
     if !uptime.is_empty() {
-        let uptime_display = format!("Up: {}", uptime);
+        let uptime_display = tf(lang, Key::CardUptime, &[uptime]);
         spans.push(Span::styled(
             uptime_display,
             Style::default().fg(Color::DarkGray),
@@ -394,6 +417,7 @@ fn render_services_lines(
     services: &[DetectedService],
     width: u16,
     max_lines: usize,
+    lang: Lang,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
@@ -403,7 +427,7 @@ fn render_services_lines(
 
         // Format: "🐳 Docker: 4 running"
         let service_name = service_name_short(&service.kind);
-        let info = service_info(service);
+        let info = service_info(service, lang);
 
         // Build line with icon, name, and info (truncate if too long)
         let text = if !info.is_empty() {
@@ -437,7 +461,7 @@ fn service_icon(kind: &ServiceKind) -> (&'static str, Color) {
 }
 
 /// Get short service name for display (A.4.1 format).
-fn service_name_short(kind: &ServiceKind) -> &str {
+fn service_name_short(kind: &ServiceKind) -> &'static str {
     match kind {
         ServiceKind::Docker => "Docker",
         ServiceKind::Nginx => "Nginx",
@@ -449,7 +473,7 @@ fn service_name_short(kind: &ServiceKind) -> &str {
 
 /// Extract detailed info for a service per A.4.1 spec.
 /// Examples: "8 containers", "repl lag 2.3s", "0 errors/5min"
-fn service_info(service: &DetectedService) -> String {
+fn service_info(service: &DetectedService, lang: Lang) -> String {
     use omnyssh_core::event::MetricValue;
 
     match service.kind {
@@ -475,19 +499,23 @@ fn service_info(service: &DetectedService) -> String {
 
             let total = running + stopped + restarting;
             if total == 0 {
-                return String::from("no containers");
+                return String::from(t(lang, Key::CardDockerNoContainers));
             }
 
             // Build status string with only non-zero counts
             let mut parts = Vec::new();
             if running > 0 {
-                parts.push(format!("{} running", running));
+                parts.push(tf(lang, Key::CardDockerRunning, &[&running.to_string()]));
             }
             if stopped > 0 {
-                parts.push(format!("{} stopped", stopped));
+                parts.push(tf(lang, Key::CardDockerStopped, &[&stopped.to_string()]));
             }
             if restarting > 0 {
-                parts.push(format!("{} restarting", restarting));
+                parts.push(tf(
+                    lang,
+                    Key::CardDockerRestarting,
+                    &[&restarting.to_string()],
+                ));
             }
 
             parts.join(", ")
@@ -498,11 +526,11 @@ fn service_info(service: &DetectedService) -> String {
                 if metric.name == "replication_lag_seconds" {
                     let MetricValue::Integer(lag) = metric.value;
                     if lag > 0 {
-                        return format!("repl lag {}s", lag);
+                        return tf(lang, Key::CardPgReplLag, &[&lag.to_string()]);
                     }
                 }
             }
-            String::from("ok")
+            String::from(t(lang, Key::CardServiceOk))
         }
         ServiceKind::Nginx => {
             // Show error count (A.4.1 format)
@@ -510,11 +538,11 @@ fn service_info(service: &DetectedService) -> String {
                 if metric.name == "recent_502_504_errors" {
                     let MetricValue::Integer(errors) = metric.value;
                     if errors > 0 {
-                        return format!("{} errors/5min", errors);
+                        return tf(lang, Key::CardNginxErrors, &[&errors.to_string()]);
                     }
                 }
             }
-            String::from("ok")
+            String::from(t(lang, Key::CardServiceOk))
         }
         ServiceKind::Redis => {
             // Show memory usage
@@ -526,9 +554,9 @@ fn service_info(service: &DetectedService) -> String {
                 }
             }
             if mem_used > 0 {
-                format!("{}MB used", mem_used)
+                tf(lang, Key::CardRedisMemUsed, &[&mem_used.to_string()])
             } else {
-                String::from("ok")
+                String::from(t(lang, Key::CardServiceOk))
             }
         }
         ServiceKind::NodeJS => {
@@ -541,9 +569,9 @@ fn service_info(service: &DetectedService) -> String {
                 }
             }
             if node_processes > 0 {
-                format!("{} process(es)", node_processes)
+                tf(lang, Key::CardNodeProcesses, &[&node_processes.to_string()])
             } else {
-                String::from("no processes")
+                String::from(t(lang, Key::CardNodeNoProcesses))
             }
         }
     }

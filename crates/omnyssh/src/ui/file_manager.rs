@@ -22,6 +22,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::app::{
     AppAction, FileManagerPopup, FileManagerView, FilePanelView, FmPanel, FormField, ViewState,
 };
+use crate::i18n::{t, tf, Key};
 use omnyssh_core::ssh::client::Host;
 
 // ---------------------------------------------------------------------------
@@ -59,7 +60,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &crate::app::AppState, view:
 
     // Determine panel titles.
     // Render key hints header
-    render_hints_header(frame, hints_area, &view.theme);
+    render_hints_header(frame, hints_area, view.lang, &view.theme);
 
     let local_cwd = if fm.local.cwd.is_empty() {
         "~".to_string()
@@ -67,8 +68,8 @@ pub fn render(frame: &mut Frame, area: Rect, state: &crate::app::AppState, view:
         fm.local.cwd.clone()
     };
     let remote_title = match &fm.connected_host {
-        Some(h) => format!("REMOTE  {} — {}", h, fm.remote.cwd),
-        None => "REMOTE  (not connected)".to_string(),
+        Some(h) => tf(view.lang, Key::FmRemoteConnected, &[h, &fm.remote.cwd]),
+        None => t(view.lang, Key::FmRemoteNotConnected).to_string(),
     };
 
     // Render panels.
@@ -77,8 +78,9 @@ pub fn render(frame: &mut Frame, area: Rect, state: &crate::app::AppState, view:
         frame,
         local_area,
         &fm.local,
-        &format!("LOCAL  {local_cwd}"),
+        &tf(view.lang, Key::FmLocal, &[&local_cwd]),
         local_active,
+        view.lang,
         &view.theme,
     );
     render_panel(
@@ -87,12 +89,13 @@ pub fn render(frame: &mut Frame, area: Rect, state: &crate::app::AppState, view:
         &fm.remote,
         &remote_title,
         !local_active,
+        view.lang,
         &view.theme,
     );
 
     // Render preview / progress zone.
     if preview_area.height > 0 {
-        render_preview_zone(frame, preview_area, fm, &view.theme);
+        render_preview_zone(frame, preview_area, fm, view);
     }
 
     // Render active popup on top.
@@ -160,7 +163,12 @@ pub fn handle_input(key: KeyEvent, view: &mut ViewState) -> Option<AppAction> {
 // Key hints header
 // ---------------------------------------------------------------------------
 
-fn render_hints_header(frame: &mut Frame, area: Rect, theme: &crate::ui::theme::Theme) {
+fn render_hints_header(
+    frame: &mut Frame,
+    area: Rect,
+    lang: omnyssh_core::i18n::Lang,
+    theme: &crate::ui::theme::Theme,
+) {
     let mut hints = Line::from(vec![
         Span::styled(
             " hjkl",
@@ -168,7 +176,10 @@ fn render_hints_header(frame: &mut Frame, area: Rect, theme: &crate::ui::theme::
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(":Navigate", Style::default().fg(theme.text_muted)),
+        Span::styled(
+            t(lang, Key::FmHintNavigateHeader),
+            Style::default().fg(theme.text_muted),
+        ),
         Span::raw("  "),
         Span::styled(
             "Tab",
@@ -176,7 +187,10 @@ fn render_hints_header(frame: &mut Frame, area: Rect, theme: &crate::ui::theme::
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(":Switch", Style::default().fg(theme.text_muted)),
+        Span::styled(
+            t(lang, Key::FmHintSwitch),
+            Style::default().fg(theme.text_muted),
+        ),
         Span::raw("  "),
         Span::styled(
             "Space",
@@ -184,7 +198,10 @@ fn render_hints_header(frame: &mut Frame, area: Rect, theme: &crate::ui::theme::
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(":Mark", Style::default().fg(theme.text_muted)),
+        Span::styled(
+            t(lang, Key::FmHintMark),
+            Style::default().fg(theme.text_muted),
+        ),
         Span::raw("  "),
         Span::styled(
             "c",
@@ -192,7 +209,10 @@ fn render_hints_header(frame: &mut Frame, area: Rect, theme: &crate::ui::theme::
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(":Copy", Style::default().fg(theme.text_muted)),
+        Span::styled(
+            t(lang, Key::FmHintCopy),
+            Style::default().fg(theme.text_muted),
+        ),
         Span::raw("  "),
         Span::styled(
             "p",
@@ -200,7 +220,10 @@ fn render_hints_header(frame: &mut Frame, area: Rect, theme: &crate::ui::theme::
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(":Paste", Style::default().fg(theme.text_muted)),
+        Span::styled(
+            t(lang, Key::FmHintPaste),
+            Style::default().fg(theme.text_muted),
+        ),
         Span::raw("  "),
         Span::styled(
             "n",
@@ -208,7 +231,10 @@ fn render_hints_header(frame: &mut Frame, area: Rect, theme: &crate::ui::theme::
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(":MkDir", Style::default().fg(theme.text_muted)),
+        Span::styled(
+            t(lang, Key::FmHintMkDir),
+            Style::default().fg(theme.text_muted),
+        ),
         Span::raw("  "),
         Span::styled(
             "Shift+R",
@@ -216,7 +242,10 @@ fn render_hints_header(frame: &mut Frame, area: Rect, theme: &crate::ui::theme::
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(":Rename", Style::default().fg(theme.text_muted)),
+        Span::styled(
+            t(lang, Key::FmHintRename),
+            Style::default().fg(theme.text_muted),
+        ),
         Span::raw("  "),
         Span::styled(
             "Shift+D",
@@ -224,7 +253,10 @@ fn render_hints_header(frame: &mut Frame, area: Rect, theme: &crate::ui::theme::
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(":Delete", Style::default().fg(theme.text_muted)),
+        Span::styled(
+            t(lang, Key::FmHintDelete),
+            Style::default().fg(theme.text_muted),
+        ),
         Span::raw("  "),
         Span::styled(
             ".",
@@ -232,7 +264,10 @@ fn render_hints_header(frame: &mut Frame, area: Rect, theme: &crate::ui::theme::
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(":Hidden", Style::default().fg(theme.text_muted)),
+        Span::styled(
+            t(lang, Key::FmHintHidden),
+            Style::default().fg(theme.text_muted),
+        ),
         Span::raw("  "),
         Span::styled(
             "Shift+H",
@@ -240,7 +275,10 @@ fn render_hints_header(frame: &mut Frame, area: Rect, theme: &crate::ui::theme::
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(":Host", Style::default().fg(theme.text_muted)),
+        Span::styled(
+            t(lang, Key::FmHintHost),
+            Style::default().fg(theme.text_muted),
+        ),
     ]);
     // Only Windows has more than one root to switch between.
     if cfg!(windows) {
@@ -252,7 +290,10 @@ fn render_hints_header(frame: &mut Frame, area: Rect, theme: &crate::ui::theme::
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(":Drive", Style::default().fg(theme.text_muted)),
+            Span::styled(
+                t(lang, Key::FmHintDrive),
+                Style::default().fg(theme.text_muted),
+            ),
         ]);
     }
 
@@ -360,6 +401,7 @@ fn render_panel(
     panel: &FilePanelView,
     title: &str,
     is_active: bool,
+    lang: omnyssh_core::i18n::Lang,
     theme: &crate::ui::theme::Theme,
 ) {
     let border_color = if is_active {
@@ -531,9 +573,9 @@ fn render_panel(
     // Empty-panel hint.
     if panel.entries.is_empty() {
         let hint = if panel.cwd.is_empty() {
-            "(loading…)"
+            t(lang, Key::FmLoading)
         } else {
-            "(empty)"
+            t(lang, Key::FmEmpty)
         };
         frame.render_widget(
             Paragraph::new(Span::styled(
@@ -555,8 +597,10 @@ fn render_preview_zone(
     frame: &mut Frame,
     area: Rect,
     fm: &FileManagerView,
-    theme: &crate::ui::theme::Theme,
+    view: &crate::app::ViewState,
 ) {
+    let lang = view.lang;
+    let theme = &view.theme;
     // If there's an active transfer, show progress gauge.
     if let Some(FileManagerPopup::TransferProgress {
         filename,
@@ -565,12 +609,12 @@ fn render_preview_zone(
         ..
     }) = &fm.popup
     {
-        render_transfer_progress(frame, area, filename, *done, *total, fm.cancelling, theme);
+        render_transfer_progress(frame, area, filename, *done, *total, fm.cancelling, view);
         return;
     }
 
     let block = Block::default()
-        .title(" Preview ")
+        .title(t(lang, Key::FmPreviewTitle))
         .title_alignment(Alignment::Left)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -617,7 +661,7 @@ fn render_preview_zone(
     } else {
         frame.render_widget(
             Paragraph::new(Span::styled(
-                "  (no preview — select a text file)",
+                t(lang, Key::FmNoPreview),
                 Style::default()
                     .fg(Color::DarkGray)
                     .add_modifier(Modifier::ITALIC),
@@ -634,10 +678,12 @@ fn render_transfer_progress(
     done: u64,
     total: u64,
     cancelling: bool,
-    theme: &crate::ui::theme::Theme,
+    view: &crate::app::ViewState,
 ) {
+    let lang = view.lang;
+    let theme = &view.theme;
     let block = Block::default()
-        .title(" Transfer Progress ")
+        .title(t(lang, Key::FmTransferProgressTitle))
         .title_alignment(Alignment::Left)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -686,7 +732,7 @@ fn render_transfer_progress(
             percent
         )
     } else {
-        format!("  {} transferred…", format_size(done))
+        tf(lang, Key::FmTransferredUnknown, &[&format_size(done)])
     };
 
     let gauge = Gauge::default()
@@ -698,7 +744,7 @@ fn render_transfer_progress(
 
     // A first Esc cancels; a second one hides this while the transfer stops.
     let (state, action) = if cancelling {
-        ("  Cancelling…", ":hide")
+        (t(lang, Key::FmCancelling), ":hide")
     } else {
         ("", ":cancel")
     };
@@ -731,20 +777,27 @@ fn render_fm_popup(
     let theme = &view.theme;
     match popup {
         FileManagerPopup::HostPicker { cursor } => {
-            render_fm_host_picker(frame, area, &state.hosts, *cursor, theme);
+            render_fm_host_picker(frame, area, &state.hosts, *cursor, view.lang, theme);
         }
         FileManagerPopup::DeleteConfirm { paths } => {
-            render_fm_delete_confirm(frame, area, paths, theme);
+            render_fm_delete_confirm(frame, area, paths, view.lang, theme);
         }
         FileManagerPopup::MkDir(field) => {
-            render_fm_text_input(frame, area, " New Directory ", field, theme);
+            render_fm_text_input(
+                frame,
+                area,
+                t(view.lang, Key::FmNewDirectory),
+                field,
+                view.lang,
+                theme,
+            );
         }
         FileManagerPopup::Rename {
             field,
             original_name,
         } => {
-            let title = format!(" Rename '{}' ", original_name);
-            render_fm_text_input(frame, area, &title, field, theme);
+            let title = tf(view.lang, Key::FmRenameTitle, &[original_name]);
+            render_fm_text_input(frame, area, &title, field, view.lang, theme);
         }
         FileManagerPopup::TransferProgress { .. } => {
             // Transfer progress is rendered in the preview zone, not as a floating popup.
@@ -758,13 +811,14 @@ fn render_fm_host_picker(
     area: Rect,
     hosts: &[Host],
     cursor: usize,
+    lang: omnyssh_core::i18n::Lang,
     theme: &crate::ui::theme::Theme,
 ) {
     let popup_area = crate::ui::popup::centred_rect(60, 70, area);
     frame.render_widget(Clear, popup_area);
 
     let block = Block::default()
-        .title(" Connect Remote Panel — Select Host ")
+        .title(t(lang, Key::FmHostPickerTitle))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -776,7 +830,7 @@ fn render_fm_host_picker(
     if hosts.is_empty() {
         frame.render_widget(
             Paragraph::new(Span::styled(
-                "  No hosts configured. Add a host from the Dashboard (1).",
+                t(lang, Key::FmHostPickerEmpty),
                 Style::default().fg(theme.text_muted),
             )),
             inner,
@@ -837,14 +891,20 @@ fn render_fm_host_picker(
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(":navigate  ", Style::default().fg(theme.text_muted)),
+            Span::styled(
+                t(lang, Key::FmHintNavigate),
+                Style::default().fg(theme.text_muted),
+            ),
             Span::styled(
                 "Enter",
                 Style::default()
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(":connect  ", Style::default().fg(theme.text_muted)),
+            Span::styled(
+                t(lang, Key::FmHintConnect),
+                Style::default().fg(theme.text_muted),
+            ),
             Span::styled(
                 "Esc",
                 Style::default()
@@ -863,6 +923,7 @@ fn render_fm_text_input(
     area: Rect,
     title: &str,
     field: &FormField,
+    lang: omnyssh_core::i18n::Lang,
     theme: &crate::ui::theme::Theme,
 ) {
     let popup_area = crate::ui::popup::centred_rect(60, 20, area);
@@ -914,7 +975,10 @@ fn render_fm_text_input(
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(":confirm  ", Style::default().fg(theme.text_muted)),
+            Span::styled(
+                t(lang, Key::FmHintConfirm),
+                Style::default().fg(theme.text_muted),
+            ),
             Span::styled(
                 "Esc",
                 Style::default()
@@ -932,13 +996,14 @@ fn render_fm_delete_confirm(
     frame: &mut Frame,
     area: Rect,
     paths: &[String],
+    lang: omnyssh_core::i18n::Lang,
     theme: &crate::ui::theme::Theme,
 ) {
     let popup_area = crate::ui::popup::centred_rect(60, 35, area);
     frame.render_widget(Clear, popup_area);
 
     let block = Block::default()
-        .title(" Confirm Delete ")
+        .title(t(lang, Key::FmConfirmDeleteTitle))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -954,7 +1019,7 @@ fn render_fm_delete_confirm(
     // Build content: up to 5 paths + ellipsis if more.
     let mut lines: Vec<Line> = vec![
         Line::from(Span::styled(
-            "  Delete the following items?",
+            t(lang, Key::FmDeletePrompt),
             Style::default()
                 .fg(Color::White)
                 .add_modifier(Modifier::BOLD),
@@ -975,14 +1040,18 @@ fn render_fm_delete_confirm(
     }
     if paths.len() > max_show {
         lines.push(Line::from(Span::styled(
-            format!("    … and {} more", paths.len() - max_show),
+            tf(
+                lang,
+                Key::FmDeleteMore,
+                &[&(paths.len() - max_show).to_string()],
+            ),
             Style::default().fg(theme.text_muted),
         )));
     }
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "  This cannot be undone.",
+        t(lang, Key::FmDeleteIrreversible),
         Style::default().fg(theme.text_muted),
     )));
 
@@ -1006,14 +1075,20 @@ fn render_fm_delete_confirm(
                     .fg(theme.text_error)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(":Yes — delete  ", Style::default().fg(theme.text_muted)),
+            Span::styled(
+                t(lang, Key::FmDeleteYes),
+                Style::default().fg(theme.text_muted),
+            ),
             Span::styled(
                 "n / Esc",
                 Style::default()
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(":No", Style::default().fg(theme.text_muted)),
+            Span::styled(
+                t(lang, Key::FmDeleteNo),
+                Style::default().fg(theme.text_muted),
+            ),
         ])),
         hint_row,
     );
@@ -1145,7 +1220,7 @@ mod tests {
         let mut terminal = ratatui::Terminal::new(backend).expect("terminal");
         terminal
             .draw(|frame| {
-                let theme = crate::ui::theme::Theme::default();
+                let view = crate::app::ViewState::default();
                 render_transfer_progress(
                     frame,
                     frame.area(),
@@ -1153,7 +1228,7 @@ mod tests {
                     1500,
                     1000,
                     false,
-                    &theme,
+                    &view,
                 );
             })
             .expect("draw");
@@ -1187,7 +1262,15 @@ mod tests {
         terminal
             .draw(|frame| {
                 let theme = crate::ui::theme::Theme::default();
-                render_panel(frame, frame.area(), &panel, "LOCAL", true, &theme);
+                render_panel(
+                    frame,
+                    frame.area(),
+                    &panel,
+                    "LOCAL",
+                    true,
+                    crate::i18n::Lang::En,
+                    &theme,
+                );
             })
             .expect("draw");
         let buffer = terminal.backend().buffer();
@@ -1226,7 +1309,15 @@ mod tests {
         terminal
             .draw(|frame| {
                 let theme = crate::ui::theme::Theme::default();
-                render_panel(frame, frame.area(), &panel, "LOCAL", true, &theme);
+                render_panel(
+                    frame,
+                    frame.area(),
+                    &panel,
+                    "LOCAL",
+                    true,
+                    crate::i18n::Lang::En,
+                    &theme,
+                );
             })
             .expect("draw");
         let buffer = terminal.backend().buffer();

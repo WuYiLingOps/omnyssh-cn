@@ -21,6 +21,7 @@ use ratatui::{
 };
 
 use crate::app::{AppAction, AppState, SnippetPopup, SnippetsView, ViewState};
+use crate::i18n::{t, tf, Key};
 use crate::ui::popup;
 use omnyssh_core::config::snippets::SnippetScope;
 
@@ -32,7 +33,7 @@ use omnyssh_core::config::snippets::SnippetScope;
 pub fn render(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState) {
     if area.width < 40 || area.height < 6 {
         frame.render_widget(
-            Paragraph::new("Terminal too small for snippets screen.")
+            Paragraph::new(t(view.lang, Key::SnippetsTooSmall))
                 .style(Style::default().fg(view.theme.text_error)),
             area,
         );
@@ -51,19 +52,27 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState)
     let sv = &view.snippets_view;
     if let Some(popup_val) = &sv.popup {
         match popup_val {
-            SnippetPopup::Add(form) => {
-                popup::render_snippet_form(frame, form, "Add Snippet", &view.theme)
-            }
-            SnippetPopup::Edit { form, .. } => {
-                popup::render_snippet_form(frame, form, "Edit Snippet", &view.theme)
-            }
+            SnippetPopup::Add(form) => popup::render_snippet_form(
+                frame,
+                form,
+                t(view.lang, Key::SnippetsAddTitle),
+                &view.theme,
+                view.lang,
+            ),
+            SnippetPopup::Edit { form, .. } => popup::render_snippet_form(
+                frame,
+                form,
+                t(view.lang, Key::SnippetsEditTitle),
+                &view.theme,
+                view.lang,
+            ),
             SnippetPopup::DeleteConfirm(idx) => {
                 let name = state
                     .snippets
                     .get(*idx)
                     .map(|s| s.name.as_str())
                     .unwrap_or("?");
-                popup::render_snippet_delete_confirm(frame, name, &view.theme);
+                popup::render_snippet_delete_confirm(frame, name, &view.theme, view.lang);
             }
             SnippetPopup::ParamInput {
                 snippet_idx,
@@ -84,6 +93,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState)
                     param_fields,
                     *focused_field,
                     &view.theme,
+                    view.lang,
                 );
             }
             SnippetPopup::BroadcastPicker {
@@ -97,6 +107,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState)
                     selected_host_indices,
                     *cursor,
                     &view.theme,
+                    view.lang,
                 );
             }
             // Results and QuickExecuteInput are rendered by ui/mod.rs overlay.
@@ -110,7 +121,7 @@ fn render_header(frame: &mut Frame, area: Rect, view: &ViewState) {
     let count = sv.filtered_indices.len();
 
     let mut spans: Vec<Span> = vec![Span::styled(
-        format!(" Snippets ({}) ", count),
+        tf(view.lang, Key::SnippetsHeaderTitle, &[&count.to_string()]),
         Style::default()
             .fg(Color::White)
             .add_modifier(Modifier::BOLD),
@@ -118,18 +129,18 @@ fn render_header(frame: &mut Frame, area: Rect, view: &ViewState) {
 
     if sv.search_mode {
         spans.push(Span::styled(
-            format!("[search: {}] ", sv.search_query),
+            tf(view.lang, Key::SnippetsSearchTag, &[&sv.search_query]),
             Style::default().fg(view.theme.accent),
         ));
     } else if !sv.search_query.is_empty() {
         spans.push(Span::styled(
-            format!("[filter: {}] ", sv.search_query),
+            tf(view.lang, Key::SnippetsFilterTag, &[&sv.search_query]),
             Style::default().fg(view.theme.text_warning),
         ));
     }
 
     spans.push(Span::styled(
-        "  n:new  e:edit  d:del  Enter:run  b:broadcast  /:search",
+        t(view.lang, Key::SnippetsHintBar),
         Style::default().fg(view.theme.text_muted),
     ));
 
@@ -149,9 +160,9 @@ fn render_list(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState
 
     if sv.filtered_indices.is_empty() {
         let msg = if !sv.search_query.is_empty() {
-            "  No snippets match."
+            t(view.lang, Key::SnippetsNoMatch)
         } else {
-            "  No snippets. Press  n  to create your first snippet."
+            t(view.lang, Key::SnippetsEmpty)
         };
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(

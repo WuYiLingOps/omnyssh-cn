@@ -15,6 +15,33 @@ impl App {
             // Quit is intercepted in main_loop before process_action is called.
             AppAction::Quit => {}
 
+            AppAction::ToggleLanguage => {
+                use crate::i18n::{tf, Key};
+                use omnyssh_core::i18n::Lang;
+
+                // Cycle through the shipped languages and persist the choice so
+                // the next launch starts in the same one.
+                let next = match self.view.lang {
+                    Lang::En => Lang::ZhHans,
+                    Lang::ZhHans => Lang::En,
+                };
+                self.view.lang = next;
+
+                if let Err(e) =
+                    omnyssh_core::config::app_config::save_language_to_config(next.code())
+                {
+                    tracing::warn!("Failed to persist language: {e}");
+                }
+
+                // Report in the language just switched *to*, so the message is
+                // readable to whoever picked it.
+                let name = match next {
+                    Lang::En => "English",
+                    Lang::ZhHans => "简体中文",
+                };
+                self.view.status_message = Some(tf(next, Key::StatusLanguageSwitched, &[name]));
+            }
+
             AppAction::ConnectAt(idx) => {
                 // Open a PTY tab in the Terminal screen instead of
                 // the old system-SSH hand-off.
@@ -29,7 +56,7 @@ impl App {
                     (idx, host)
                 };
                 if let (Some(idx), Some(host)) = (idx, host) {
-                    let form = HostForm::from_host(&host);
+                    let form = HostForm::from_host(&host, self.view.lang);
                     self.view.host_list.popup = Some(HostPopup::Edit {
                         host_idx: idx,
                         form,
@@ -55,7 +82,10 @@ impl App {
                         Err(e) => tracing::warn!("Reload failed: {}", e),
                     }
                 });
-                self.view.status_message = Some("Reloading hosts…".to_string());
+                self.view.status_message = Some(
+                    crate::i18n::t(self.view.lang, crate::i18n::Key::StatusReloadingHosts)
+                        .to_string(),
+                );
             }
 
             AppAction::SearchQueryChanged => {
@@ -71,7 +101,10 @@ impl App {
                 if let Some(mgr) = &self.poll_manager {
                     mgr.refresh_all();
                 }
-                self.view.status_message = Some("Refreshing metrics…".to_string());
+                self.view.status_message = Some(
+                    crate::i18n::t(self.view.lang, crate::i18n::Key::StatusRefreshingMetrics)
+                        .to_string(),
+                );
             }
 
             AppAction::CycleSortOrder => {
@@ -135,12 +168,18 @@ impl App {
                         if host.password.is_some() && host.identity_file.is_none() {
                             self.view.host_list.popup = Some(HostPopup::KeySetupConfirm(idx));
                         } else if host.identity_file.is_some() {
-                            self.view.status_message =
-                                Some(format!("'{}' already uses key authentication.", host.name));
+                            self.view.status_message = Some(crate::i18n::tf(
+                                self.view.lang,
+                                crate::i18n::Key::StatusAlreadyUsesKeyAuth,
+                                &[&host.name],
+                            ));
                         } else {
                             self.view.status_message = Some(
-                                "No password set for this host. Add a password first to enable key setup."
-                                    .to_string(),
+                                crate::i18n::t(
+                                    self.view.lang,
+                                    crate::i18n::Key::StatusNoPasswordForKeySetup,
+                                )
+                                .to_string(),
                             );
                         }
                     }
@@ -160,6 +199,7 @@ impl App {
                     // Spawn background key setup task.
                     let tx = self.core_tx.clone();
                     let host_clone = host.clone();
+                    let lang = self.view.lang;
                     tokio::spawn(async move {
                         use omnyssh_core::ssh::key_setup::{
                             setup_key_for_host, KeySetupStep, KeyType,
@@ -186,7 +226,11 @@ impl App {
                                 let _ = tx
                                     .send(CoreEvent::KeySetupFailed(
                                         host_clone.name.clone(),
-                                        format!("Connection failed: {}", e),
+                                        crate::i18n::tf(
+                                            lang,
+                                            crate::i18n::Key::ErrKeySetupConnectionFailed,
+                                            &[&e.to_string()],
+                                        ),
                                     ))
                                     .await;
                                 return;
@@ -221,9 +265,13 @@ impl App {
                                             .await;
                                     }
                                     KeySetupState::RolledBack => {
-                                        let msg = result
-                                            .error_message
-                                            .unwrap_or_else(|| "Rolled back.".to_string());
+                                        let msg = result.error_message.unwrap_or_else(|| {
+                                            crate::i18n::t(
+                                                lang,
+                                                crate::i18n::Key::ErrKeySetupRolledBack,
+                                            )
+                                            .to_string()
+                                        });
                                         let _ = tx
                                             .send(CoreEvent::KeySetupRollback(
                                                 host_clone.name.clone(),
@@ -232,9 +280,13 @@ impl App {
                                             .await;
                                     }
                                     _ => {
-                                        let msg = result
-                                            .error_message
-                                            .unwrap_or_else(|| "Unknown failure.".to_string());
+                                        let msg = result.error_message.unwrap_or_else(|| {
+                                            crate::i18n::t(
+                                                lang,
+                                                crate::i18n::Key::ErrKeySetupUnknownFailure,
+                                            )
+                                            .to_string()
+                                        });
                                         let _ = tx
                                             .send(CoreEvent::KeySetupFailed(
                                                 host_clone.name.clone(),
@@ -276,16 +328,24 @@ impl App {
                     return Ok(());
                 };
                 if host.local_forwards.is_empty() {
-                    self.view.status_message = Some(format!(
-                        "No port forwards set for '{}' — add them with e",
-                        host.name
+                    self.view.status_message = Some(crate::i18n::tf(
+                        self.view.lang,
+                        crate::i18n::Key::StatusNoPortForwards,
+                        &[&host.name],
                     ));
                 } else if tunnels.is_running(&host.name) {
                     tunnels.stop(&host.name);
-                    self.view.status_message = Some(format!("Tunnel for '{}' stopped", host.name));
+                    self.view.status_message = Some(crate::i18n::tf(
+                        self.view.lang,
+                        crate::i18n::Key::StatusTunnelStopped,
+                        &[&host.name],
+                    ));
                 } else {
-                    self.view.status_message =
-                        Some(format!("Starting tunnel for '{}'…", host.name));
+                    self.view.status_message = Some(crate::i18n::tf(
+                        self.view.lang,
+                        crate::i18n::Key::StatusTunnelStarting,
+                        &[&host.name],
+                    ));
                     tunnels.start(host);
                 }
             }
@@ -327,9 +387,10 @@ impl App {
                 // The connection checks it with the server and asks again if
                 // it is refused.
                 if omnyssh_core::ssh::password::answer(prompt.request_id, password).is_err() {
-                    self.view.status_message = Some(format!(
-                        "{} is no longer waiting for a password",
-                        prompt.login
+                    self.view.status_message = Some(crate::i18n::tf(
+                        self.view.lang,
+                        crate::i18n::Key::StatusNoLongerWaitingPassword,
+                        &[&prompt.login],
                     ));
                 }
             }
@@ -366,7 +427,8 @@ impl App {
             // Snippet actions
             // ---------------------------------------------------------------
             AppAction::OpenSnippetAdd => {
-                self.view.snippets_view.popup = Some(SnippetPopup::Add(SnippetForm::empty()));
+                self.view.snippets_view.popup =
+                    Some(SnippetPopup::Add(SnippetForm::empty(self.view.lang)));
             }
 
             AppAction::OpenSnippetEdit => {
@@ -374,7 +436,7 @@ impl App {
                 if let Some(i) = idx {
                     let snippet = self.state.read().await.snippets.get(i).cloned();
                     if let Some(s) = snippet {
-                        let form = SnippetForm::from_snippet(&s);
+                        let form = SnippetForm::from_snippet(&s, self.view.lang);
                         self.view.snippets_view.popup = Some(SnippetPopup::Edit {
                             snippet_idx: i,
                             form,
@@ -487,7 +549,10 @@ impl App {
                         command_field: FormField::default(),
                     });
                 } else {
-                    self.view.status_message = Some("No host selected.".to_string());
+                    self.view.status_message = Some(
+                        crate::i18n::t(self.view.lang, crate::i18n::Key::StatusNoHostSelected)
+                            .to_string(),
+                    );
                 }
             }
 
@@ -567,14 +632,19 @@ impl App {
                     )
                 };
                 if paths.is_empty() {
-                    self.view.status_message = Some("Nothing to copy.".to_string());
+                    self.view.status_message = Some(
+                        crate::i18n::t(self.view.lang, crate::i18n::Key::StatusNothingToCopy)
+                            .to_string(),
+                    );
                 } else {
                     self.view.file_manager.clipboard = Some(FmClipboard {
                         paths,
                         source_panel: source,
                     });
-                    self.view.status_message =
-                        Some("Copied to clipboard. Switch panel and press p to paste.".to_string());
+                    self.view.status_message = Some(
+                        crate::i18n::t(self.view.lang, crate::i18n::Key::StatusCopiedToClipboard)
+                            .to_string(),
+                    );
                 }
             }
 
@@ -585,7 +655,10 @@ impl App {
             AppAction::FmOpenDeleteConfirm => {
                 let paths = self.active_fm_panel_ref().marked_or_cursor_paths();
                 if paths.is_empty() {
-                    self.view.status_message = Some("Nothing to delete.".to_string());
+                    self.view.status_message = Some(
+                        crate::i18n::t(self.view.lang, crate::i18n::Key::StatusNothingToDelete)
+                            .to_string(),
+                    );
                 } else {
                     self.view.file_manager.popup = Some(FileManagerPopup::DeleteConfirm { paths });
                 }
@@ -641,7 +714,10 @@ impl App {
                         mgr.cancel();
                     }
                     fm.cancelling = true;
-                    self.view.status_message = Some("Cancelling…".to_string());
+                    self.view.status_message = Some(
+                        crate::i18n::t(self.view.lang, crate::i18n::Key::StatusCancelling)
+                            .to_string(),
+                    );
                 }
             }
 
@@ -744,7 +820,8 @@ impl App {
                     tv.split_focus = SplitFocus::Primary;
                 } else {
                     self.view.status_message = Some(
-                        "Need at least 2 tabs to split. Open another tab with Ctrl+T.".to_string(),
+                        crate::i18n::t(self.view.lang, crate::i18n::Key::StatusNeedTwoTabsToSplit)
+                            .to_string(),
                     );
                 }
             }
@@ -769,7 +846,8 @@ impl App {
                     tv.split_focus = SplitFocus::Primary;
                 } else {
                     self.view.status_message = Some(
-                        "Need at least 2 tabs to split. Open another tab with Ctrl+T.".to_string(),
+                        crate::i18n::t(self.view.lang, crate::i18n::Key::StatusNeedTwoTabsToSplit)
+                            .to_string(),
                     );
                 }
             }
@@ -874,7 +952,11 @@ impl App {
         match result {
             Ok(()) => {
                 prompts.remove(pos);
-                self.view.status_message = Some(format!("Unlocked {key_path}"));
+                self.view.status_message = Some(crate::i18n::tf(
+                    self.view.lang,
+                    crate::i18n::Key::StatusUnlocked,
+                    &[&key_path],
+                ));
             }
             Err(message) => {
                 prompts[pos].unlocking = false;

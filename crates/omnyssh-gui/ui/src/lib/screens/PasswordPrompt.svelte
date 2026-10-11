@@ -2,6 +2,7 @@
   // Asks for the login password a connection waits on (tech-gui.md §4.2). The
   // server checks it; a refused one comes back as a new prompt marked `retry`.
   // The password is dropped here as soon as it is sent.
+  import { t } from 'svelte-i18n';
   import Modal from '$lib/components/Modal.svelte';
   import { Button, Icon } from '$lib/theme';
   import { displayLogin, passwordPrompt, settlePassword } from '$lib/stores/password';
@@ -46,9 +47,7 @@
     // waiting (it gives up after a few minutes) refuses it; say so, or a typed
     // password would vanish without a word.
     settlePassword(id);
-    await answerPassword(id, secret).catch(() =>
-      lastError.set('That login stopped waiting for a password. Open it again.')
-    );
+    await answerPassword(id, secret).catch(() => lastError.set(String($t('password.gaveUp'))));
   }
 
   function submit(): void {
@@ -63,7 +62,11 @@
 {#if $passwordPrompt}
   {@const prompt = $passwordPrompt}
   <!-- A stray click beside it must not cancel the login. -->
-  <Modal label="SSH login" onClose={() => void answer(null)} backdropCloses={false}>
+  <Modal
+    label={$t('password.modalLabel')}
+    onClose={() => void answer(null)}
+    backdropCloses={false}
+  >
     <form
       bind:this={form}
       class="space-y-4 px-5 py-4"
@@ -75,14 +78,16 @@
       <div class="space-y-1">
         <div class="flex items-center gap-2.5">
           <Icon name="key" size={16} />
-          <h2 class="min-w-0 truncate text-sm font-semibold">SSH login — {prompt.hostName}</h2>
+          <h2 class="min-w-0 truncate text-sm font-semibold">
+            {$t('password.heading', { values: { host: prompt.hostName } })}
+          </h2>
         </div>
         <p class="break-all font-mono text-xs text-muted">
           {displayLogin(prompt.login, $streamerMode)}
         </p>
       </div>
       <label class="block space-y-1 text-xs font-medium text-muted">
-        <span>Password</span>
+        <span>{$t('password.password')}</span>
         <input
           type="password"
           bind:this={input}
@@ -91,19 +96,19 @@
           autocomplete="off"
         />
       </label>
-      <p class="text-xs text-faint">
-        Kept in memory until you quit OmnySSH, never written to disk.
-      </p>
+      <p class="text-xs text-faint">{$t('password.memoryHint')}</p>
       {#if prompt.retry}
-        <p class="text-xs text-status-crit">Permission denied, please try again.</p>
+        <p class="text-xs text-status-crit">{$t('password.retry')}</p>
       {:else if prompt.newHostKey}
         <p class="break-all text-xs text-status-warn">
-          First connection to this server. Its host key was recorded: {prompt.newHostKey}
+          {$t('password.newHostKey', { values: { key: prompt.newHostKey } })}
         </p>
       {/if}
       <div class="flex justify-end gap-2">
-        <Button variant="ghost" type="button" onclick={() => void answer(null)}>Cancel</Button>
-        <Button variant="primary" type="submit" disabled={!password}>Log in</Button>
+        <Button variant="ghost" type="button" onclick={() => void answer(null)}
+          >{$t('password.cancel')}</Button
+        >
+        <Button variant="primary" type="submit" disabled={!password}>{$t('password.submit')}</Button>
       </div>
     </form>
   </Modal>

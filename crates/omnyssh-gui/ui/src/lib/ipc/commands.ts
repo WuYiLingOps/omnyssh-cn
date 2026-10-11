@@ -2,7 +2,8 @@
 // Components call these, never `invoke` directly.
 
 import type { Channel } from '@tauri-apps/api/core';
-import { commands } from '$lib/bindings';
+import { commands, type CommandError } from '$lib/bindings';
+import { errorMessage } from '$lib/i18n/errors';
 import type {
   FileEntryDto,
   HostDto,
@@ -14,47 +15,53 @@ import type {
   UpdateInfoDto
 } from '$lib/bindings';
 
+/** Turn a failed command into an `Error` the UI can show. A coded error is rendered
+ *  in the active language; one without a code shows the backend's own text (§3.7). */
+function fail(error: CommandError): Error {
+  return new Error(errorMessage(error));
+}
+
 export async function listHosts(): Promise<HostDto[]> {
   const res = await commands.listHosts();
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
   return res.data;
 }
 
 /** Reload hosts from disk and (re)start the pollers; broadcasts `hosts-loaded`. */
 export async function reloadHosts(): Promise<void> {
   const res = await commands.reloadHosts();
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Add or edit a manual host in `hosts.toml`. Call `reloadHosts` after to refresh. */
 export async function saveHost(input: HostInputDto): Promise<void> {
   const res = await commands.saveHost(input);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Delete a manual host by name. A missing / SSH-config name is a no-op success. */
 export async function deleteHost(name: string): Promise<void> {
   const res = await commands.deleteHost(name);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Read the saved snippets from the shared `snippets.toml`. */
 export async function listSnippets(): Promise<SnippetDto[]> {
   const res = await commands.listSnippets();
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
   return res.data;
 }
 
 /** Upsert one snippet by name and persist the whole list. */
 export async function saveSnippet(snippet: SnippetDto): Promise<void> {
   const res = await commands.saveSnippet(snippet);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Delete the snippet named `name` and persist. */
 export async function deleteSnippet(name: string): Promise<void> {
   const res = await commands.deleteSnippet(name);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Run a snippet on one or more hosts; results arrive as `snippet-result` events. */
@@ -64,7 +71,7 @@ export async function executeSnippet(
   params: Record<string, string>
 ): Promise<void> {
   const res = await commands.executeSnippet(snippetName, hostNames, params);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Open a terminal for `hostName`, streaming raw output into `onOutput`; returns the
@@ -76,46 +83,46 @@ export async function terminalOpen(
   onOutput: Channel<TerminalBytes>
 ): Promise<number> {
   const res = await commands.terminalOpen(hostName, cols, rows, onOutput);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
   return res.data;
 }
 
 /** Send keystrokes (UTF-8 bytes) to a terminal. */
 export async function terminalWrite(sessionId: number, data: number[]): Promise<void> {
   const res = await commands.terminalWrite(sessionId, data);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Reflow a terminal to `cols` x `rows`. */
 export async function terminalResize(sessionId: number, cols: number, rows: number): Promise<void> {
   const res = await commands.terminalResize(sessionId, cols, rows);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Close a terminal and its connection. Idempotent for an already-closed id. */
 export async function terminalClose(sessionId: number): Promise<void> {
   const res = await commands.terminalClose(sessionId);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Open an SFTP session for `hostName`; returns the public session id the sftp_*
  *  wrappers use, and the tab's `sftp-*` events carry (tech-gui.md §3.4/§4.2). */
 export async function sftpOpen(hostName: string): Promise<number> {
   const res = await commands.sftpOpen(hostName);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
   return res.data;
 }
 
 /** List a remote directory; the result arrives as `sftp-dir-listed`. */
 export async function sftpList(sessionId: number, path: string): Promise<void> {
   const res = await commands.sftpList(sessionId, path);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Upload a local file or folder to a remote path; progress arrives as `transfer-progress`. */
 export async function sftpUpload(sessionId: number, local: string, remote: string): Promise<void> {
   const res = await commands.sftpUpload(sessionId, local, remote);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Download a remote file or folder to a local path; progress arrives as
@@ -126,49 +133,49 @@ export async function sftpDownload(
   remote: string
 ): Promise<void> {
   const res = await commands.sftpDownload(sessionId, local, remote);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Create a remote directory; completion arrives as `sftp-op-done`. */
 export async function sftpMkdir(sessionId: number, path: string): Promise<void> {
   const res = await commands.sftpMkdir(sessionId, path);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Rename / move a remote path; completion arrives as `sftp-op-done`. */
 export async function sftpRename(sessionId: number, from: string, to: string): Promise<void> {
   const res = await commands.sftpRename(sessionId, from, to);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Delete a remote file (or empty directory); completion arrives as `sftp-op-done`. */
 export async function sftpDelete(sessionId: number, path: string): Promise<void> {
   const res = await commands.sftpDelete(sessionId, path);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Request a remote file preview; the bytes arrive as `file-preview`. */
 export async function sftpPreview(sessionId: number, path: string): Promise<void> {
   const res = await commands.sftpPreview(sessionId, path);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Cancel the session's running transfer; its `sftp-op-done` says it was cancelled. */
 export async function sftpCancel(sessionId: number): Promise<void> {
   const res = await commands.sftpCancel(sessionId);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Close an SFTP session and its connection. Idempotent for an already-closed id. */
 export async function sftpClose(sessionId: number): Promise<void> {
   const res = await commands.sftpClose(sessionId);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** List a local directory (returns directly — no event). */
 export async function listLocalDir(path: string): Promise<FileEntryDto[]> {
   const res = await commands.listLocalDir(path);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
   return res.data;
 }
 
@@ -180,7 +187,7 @@ export async function listLocalRoots(): Promise<string[]> {
 /** Read up to 4 KiB of a local file as UTF-8 for preview. */
 export async function previewLocalFile(path: string): Promise<string> {
   const res = await commands.previewLocalFile(path);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
   return res.data;
 }
 
@@ -188,27 +195,27 @@ export async function previewLocalFile(path: string): Promise<string> {
  *  events (tech-gui.md §4.2). Fire-and-forget — only an unknown host rejects here. */
 export async function startKeySetup(hostName: string): Promise<void> {
   const res = await commands.startKeySetup(hostName);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Start (or restart) a host's tunnel; its progress arrives as `tunnel-status-changed`
  *  (tech-gui.md §4.2). Rejects an unknown host or one without port forwards. */
 export async function tunnelStart(hostName: string): Promise<void> {
   const res = await commands.tunnelStart(hostName);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Stop a host's tunnel; a no-op when none runs. */
 export async function tunnelStop(hostName: string): Promise<void> {
   const res = await commands.tunnelStop(hostName);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Paste into the focused terminal through the webview's own paste, for the Ctrl+Shift+V
  *  WebKitGTK misses under a non-Latin layout. */
 export async function terminalPaste(): Promise<void> {
   const res = await commands.terminalPaste();
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Minimize and close to the tray, or not; resolves to what this desktop allows. */
@@ -217,20 +224,20 @@ export async function setTrayBehavior(
   closeToTray: boolean
 ): Promise<TraySupportDto> {
   const res = await commands.setTrayBehavior(minimizeToTray, closeToTray);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
   return res.data;
 }
 
 /** Force an immediate metric poll of every host (tech-gui.md §4.2). */
 export async function refreshMetrics(): Promise<void> {
   const res = await commands.refreshMetrics();
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Check GitHub for a newer release; `null` means up to date (tech-gui.md §4.2). */
 export async function checkUpdate(): Promise<UpdateInfoDto | null> {
   const res = await commands.checkUpdate();
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
   return res.data;
 }
 
@@ -238,30 +245,30 @@ export async function checkUpdate(): Promise<UpdateInfoDto | null> {
  *  Stage 5 configures the updater endpoints; until then it reports "not available yet". */
 export async function installUpdate(): Promise<void> {
   const res = await commands.installUpdate();
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Read the update-checker preferences from the shared config (tech-gui.md §4.3). */
 export async function loadUpdateConfig(): Promise<UpdateConfigDto> {
   const res = await commands.loadUpdateConfig();
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
   return res.data;
 }
 
 /** Persist the update-checker preferences to the shared config (tech-gui.md §4.3). */
 export async function saveUpdateConfig(config: UpdateConfigDto): Promise<void> {
   const res = await commands.saveUpdateConfig(config);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Decrypt an identity file with `passphrase` and cache it for this process. */
 export async function unlockIdentity(keyPath: string, passphrase: string): Promise<void> {
   const res = await commands.unlockIdentity(keyPath, passphrase);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }
 
 /** Answer a login's password prompt; `null` cancels the login. */
 export async function answerPassword(requestId: number, password: string | null): Promise<void> {
   const res = await commands.answerPassword(requestId, password);
-  if (res.status === 'error') throw new Error(res.error.message);
+  if (res.status === 'error') throw fail(res.error);
 }

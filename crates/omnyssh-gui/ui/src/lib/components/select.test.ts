@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
@@ -14,7 +14,10 @@ const COMPONENT = 'lib/components/Select.svelte';
 function svelteFiles(): string[] {
   return readdirSync(SRC, { recursive: true, encoding: 'utf8' })
     .filter((f) => f.endsWith('.svelte'))
-    .map((f) => join(SRC, f));
+    // `readdirSync` returns the platform's separator, so on Windows the relative paths
+    // come back as `lib\components\Select.svelte` and a POSIX `endsWith` never matches —
+    // the exemption below would then flag `Select.svelte` as its own offender.
+    .map((f) => join(SRC, f).split(sep).join('/'));
 }
 
 describe('select controls', () => {

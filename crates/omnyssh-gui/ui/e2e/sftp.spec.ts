@@ -418,8 +418,9 @@ test('a transfer that would replace items asks first, once for the batch', async
   await localPane.getByRole('checkbox', { name: 'Mark work' }).click();
   await page.getByRole('button', { name: 'Upload' }).click();
   const ask = page.getByRole('dialog', { name: 'Replace existing items' });
+  // The count is an ICU plural: one reads "1 item already exists", many "2 items already exist".
   await expect(ask).toContainText(
-    '1 item(s) already exist in /. Folders are merged and files with the same name are replaced.'
+    '1 item already exists in /. Folders are merged and files with the same name are replaced.'
   );
   await ask.getByRole('button', { name: 'Cancel' }).click();
   await expect(ask).toHaveCount(0);
@@ -477,7 +478,7 @@ test('a listed name that is not one plain name is refused, the rest downloads', 
     await remotePane.getByRole('checkbox', { name: `Mark ${name}` }).click();
   }
   await page.getByRole('button', { name: 'Download' }).click();
-  await expect(page.getByText("'a/b' is not a name that can be created here.")).toBeVisible();
+  await expect(page.getByText('‘a/b’ is not a name that can be created here.')).toBeVisible();
   await expect(page.getByLabel('transfer progress')).toBeVisible();
   const downloads = await page.evaluate(() => (window as unknown as { __downloads: string[] }).__downloads);
   expect(downloads).toEqual(['/home/user/ok.log']);
@@ -800,7 +801,7 @@ test('two dropped items of one name are refused, not uploaded over each other', 
 
   const at = await centre(remotePane.getByText('config.yml'));
   await osDrop(page, ['/tmp/a/readme.txt', '/tmp/b/readme.txt'], at);
-  await expect(page.getByText("Two of the items would both be 'readme.txt' in /.")).toBeVisible();
+  await expect(page.getByText('Two of the items would both be ‘readme.txt’ in /.')).toBeVisible();
   await expect(page.getByLabel('transfer progress')).toHaveCount(0);
   expect(await uploads(page)).toEqual([]);
 });

@@ -2,6 +2,7 @@
 .claude
 demo.tape
 .DS_Store
+.workbuddy
 
 # Local symlink created by `nix build`.
 /result
@@ -21,4 +22,5 @@ crates/omnyssh-gui/ui/.svelte-kit/
 crates/omnyssh-gui/ui/test-results/
 crates/omnyssh-gui/ui/playwright-report/
 crates/omnyssh-gui/ui/playwright/.cache/
+crates/omnyssh-gui/ui/vite.config.ts.timestamp-*.mjs
 *.tauri.key

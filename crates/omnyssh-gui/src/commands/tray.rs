@@ -16,9 +16,7 @@ pub async fn set_tray_behavior(
     minimize_to_tray: bool,
     close_to_tray: bool,
 ) -> Result<TraySupportDto, CommandError> {
-    let error = |e: &dyn std::fmt::Display| CommandError {
-        message: e.to_string(),
-    };
+    let error = |e: &dyn std::fmt::Display| CommandError::plain(e.to_string());
     // Other processes answer these, so they are asked before the main thread is.
     let hosts = tokio::task::spawn_blocking(crate::tray::find_hosts)
         .await
@@ -36,7 +34,5 @@ pub async fn set_tray_behavior(
         ));
     })
     .map_err(|e| error(&e))?;
-    rx.await
-        .map_err(|e| error(&e))?
-        .map_err(|message| CommandError { message })
+    rx.await.map_err(|e| error(&e))?.map_err(|e| error(&e))
 }

@@ -410,6 +410,22 @@ async setTrayBehavior(minimizeToTray: boolean, closeToTray: boolean) : Promise<R
 }
 },
 /**
+ * Points the shell's native decorations at `code`: persists it to the shared
+ * config so the TUI renders the same language, rebuilds the macOS menu and the
+ * tray text, and returns the resolved code so the frontend can reconcile.
+ * 
+ * Best-effort on the rebuilds: a failed menu or tray swap leaves the old labels
+ * in place and must never fail the switch the user actually asked for.
+ */
+async setLanguage(code: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_language", { code }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Query GitHub for a newer release (tech-gui.md §4.2). `None` means up to date — the
  * core swallows network/parse errors so a failed check never disrupts.
  */
@@ -517,7 +533,21 @@ updateAvailable: "update-available"
 
 /** user-defined types **/
 
-export type CommandError = { message: string }
+export type CommandError = { 
+/**
+ * A stable identifier the frontend maps to a translated string (e.g.
+ * `"unknownHost"`, `"invalidForward"`). `None` for messages with no code yet.
+ */
+code?: string | null; 
+/**
+ * Values the code's translation interpolates (`{host}`, `{forward}`, …).
+ */
+params?: Partial<{ [key in string]: string }> | null; 
+/**
+ * The English (or engine) text. Always present: the fallback when the frontend
+ * has no translation for `code`, and the whole story when there is no code.
+ */
+message: string }
 /**
  * Live connection state for a host (tech-gui.md §4.1). Internally tagged so the
  * frontend consumes a discriminated union keyed on `kind`.
@@ -595,10 +625,21 @@ export type KeySetupProgress = { hostName: string; step: KeySetupStepDto }
 export type KeySetupRollback = { hostName: string; result: string }
 /**
  * One step of the auto key-setup flow, for the progress view (tech-gui.md §4.2/§4.3).
- * `index` is 1-based (`1..=total`); `description` is the core's human-readable label.
- * Maps from the core `KeySetupStep`.
+ * `index` is 1-based (`1..=total`).
+ * 
+ * Carries both a stable `code` the frontend translates (`keySetup.step.<code>`) and a
+ * `description` in the *backend's* language as the fallback — a client whose packs
+ * lack the code still has readable text (i18n plan §3.7).
  */
-export type KeySetupStepDto = { index: number; total: number; description: string }
+export type KeySetupStepDto = { index: number; total: number; 
+/**
+ * A stable, language-independent identifier: `generateKey`, `copyPublicKey`, …
+ */
+code: string; 
+/**
+ * The core's label, localized to the resolved UI language.
+ */
+description: string }
 /**
  * One `ssh -L` rule (tech-gui.md §4.1): listen on `bindAddress:bindPort` here and
  * reach `remoteHost:remotePort` as the host resolves it. No `bindAddress` means the

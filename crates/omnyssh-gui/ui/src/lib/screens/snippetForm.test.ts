@@ -20,17 +20,17 @@ function snippet(partial: Partial<SnippetDto>): SnippetDto {
 describe('formToSnippet — mirrors the TUI to_snippet', () => {
   it('rejects an empty name', () => {
     const r = formToSnippet(fields({ name: '  ', command: 'ls' }));
-    expect(r).toEqual({ ok: false, error: 'Name cannot be empty' });
+    expect(r).toEqual({ ok: false, error: { key: 'snippetEditor.errNameEmpty' } });
   });
 
   it('rejects an empty command', () => {
     const r = formToSnippet(fields({ name: 'n', command: '   ' }));
-    expect(r).toEqual({ ok: false, error: 'Command cannot be empty' });
+    expect(r).toEqual({ ok: false, error: { key: 'snippetEditor.errCommandEmpty' } });
   });
 
   it('requires a host when scope is host', () => {
     const r = formToSnippet(fields({ name: 'n', command: 'ls', scope: 'host', host: '' }));
-    expect(r).toEqual({ ok: false, error: "Host is required when scope is 'host'" });
+    expect(r).toEqual({ ok: false, error: { key: 'snippetEditor.errHostRequired' } });
   });
 
   it('keeps a host provided under global scope (matches the TUI)', () => {

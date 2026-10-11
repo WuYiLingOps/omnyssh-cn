@@ -7,6 +7,11 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## Unreleased
+
+### Features
+- **The interface can be shown in Simplified Chinese.** Settings, next to Theme, picks the language both apps use — English or 简体中文 — and the choice is kept in the shared config, so the terminal app and the desktop app follow each other and the language carries across restarts. Every screen, dialog, error and the desktop app's own menu and tray are translated; the language can also be set with `--lang zh-Hans` or `[ui] language` in the config file.
+
 ## 1.1.5 — 2026-10-09
 
 ### Features

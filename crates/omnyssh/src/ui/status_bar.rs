@@ -7,6 +7,7 @@ use ratatui::{
 };
 
 use crate::app::{AppState, FileManagerPopup, Screen, SnippetPopup, ViewState};
+use crate::i18n::{t, Key};
 
 /// Renders the bottom status bar with context-sensitive key hints.
 pub fn render(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState) {
@@ -18,6 +19,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState)
     let sep_style = Style::default().fg(view.theme.separator_fg);
     let hint_style = Style::default().fg(view.theme.hint_fg);
 
+    // Translation of a key in the active language; the short forms keep the
+    // hint tables below readable.
+    let tr = |key: Key| t(view.lang, key);
+
     macro_rules! key {
         ($k:expr) => {
             Span::styled(format!(" {} ", $k), key_style)
@@ -25,7 +30,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState)
     }
     macro_rules! hint {
         ($h:expr) => {
-            Span::styled(format!(" {} ", $h), hint_style)
+            Span::styled(format!(" {} ", tr($h)), hint_style)
         };
     }
     macro_rules! sep {
@@ -53,18 +58,21 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState)
     if hlv.search_mode {
         let line = Line::from(vec![
             Span::styled(
-                " [SEARCH] ",
+                format!(" {} ", tr(Key::SearchBadge)),
                 Style::default()
                     .fg(Color::Black)
                     .bg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(" type to filter  ", Style::default().fg(Color::Gray)),
+            Span::styled(
+                format!(" {}  ", tr(Key::SearchTypeToFilter)),
+                Style::default().fg(Color::Gray),
+            ),
             key!("Enter"),
-            hint!("confirm"),
+            hint!(Key::HintConfirm),
             sep!(),
             key!("Esc"),
-            hint!("clear"),
+            hint!(Key::HintClear),
         ]);
         frame.render_widget(
             Paragraph::new(line).style(Style::default().bg(Color::Reset)),
@@ -79,36 +87,36 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState)
         let line = match popup {
             HostPopup::Add(_) | HostPopup::Edit { .. } => Line::from(vec![
                 key!("Tab"),
-                hint!("next field"),
+                hint!(Key::HintNextField),
                 sep!(),
                 key!("Shift+Tab"),
-                hint!("prev field"),
+                hint!(Key::HintPrevField),
                 sep!(),
                 key!("Enter"),
-                hint!("save"),
+                hint!(Key::HintSave),
                 sep!(),
                 key!("Esc"),
-                hint!("cancel"),
+                hint!(Key::HintCancel),
             ]),
             HostPopup::DeleteConfirm(_) => Line::from(vec![
                 key!("y"),
-                hint!("confirm delete"),
+                hint!(Key::HintConfirmDelete),
                 sep!(),
                 key!("n / Esc"),
-                hint!("cancel"),
+                hint!(Key::HintCancel),
             ]),
             HostPopup::KeySetupConfirm(_) => Line::from(vec![
                 key!("y / Enter"),
-                hint!("confirm setup"),
+                hint!(Key::HintConfirmSetup),
                 sep!(),
                 key!("n / Esc"),
-                hint!("cancel"),
+                hint!(Key::HintCancel),
             ]),
             HostPopup::KeySetupProgress { .. } => Line::from(vec![
-                Span::styled(" Setting up SSH keys… ", hint_style),
+                Span::styled(format!(" {} ", tr(Key::SettingUpKeys)), hint_style),
                 sep!(),
                 key!("Esc"),
-                hint!("close"),
+                hint!(Key::HintClose),
             ]),
         };
         frame.render_widget(
@@ -122,18 +130,21 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState)
     if view.snippets_view.search_mode {
         let line = Line::from(vec![
             Span::styled(
-                " [SEARCH] ",
+                format!(" {} ", tr(Key::SearchBadge)),
                 Style::default()
                     .fg(Color::Black)
                     .bg(Color::Green)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(" type to filter  ", Style::default().fg(Color::Gray)),
+            Span::styled(
+                format!(" {}  ", tr(Key::SearchTypeToFilter)),
+                Style::default().fg(Color::Gray),
+            ),
             key!("Enter"),
-            hint!("confirm"),
+            hint!(Key::HintConfirm),
             sep!(),
             key!("Esc"),
-            hint!("clear"),
+            hint!(Key::HintClear),
         ]);
         frame.render_widget(
             Paragraph::new(line).style(Style::default().bg(Color::Reset)),
@@ -147,60 +158,60 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState)
         let line = match popup {
             SnippetPopup::Add(_) | SnippetPopup::Edit { .. } => Line::from(vec![
                 key!("Tab"),
-                hint!("next field"),
+                hint!(Key::HintNextField),
                 sep!(),
                 key!("Shift+Tab"),
-                hint!("prev field"),
+                hint!(Key::HintPrevField),
                 sep!(),
                 key!("Enter"),
-                hint!("save"),
+                hint!(Key::HintSave),
                 sep!(),
                 key!("Esc"),
-                hint!("cancel"),
+                hint!(Key::HintCancel),
             ]),
             SnippetPopup::DeleteConfirm(_) => Line::from(vec![
                 key!("y"),
-                hint!("confirm delete"),
+                hint!(Key::HintConfirmDelete),
                 sep!(),
                 key!("n / Esc"),
-                hint!("cancel"),
+                hint!(Key::HintCancel),
             ]),
             SnippetPopup::ParamInput { .. } => Line::from(vec![
                 key!("Tab"),
-                hint!("next param"),
+                hint!(Key::HintNextParam),
                 sep!(),
                 key!("Enter"),
-                hint!("run"),
+                hint!(Key::HintRun),
                 sep!(),
                 key!("Esc"),
-                hint!("cancel"),
+                hint!(Key::HintCancel),
             ]),
             SnippetPopup::BroadcastPicker { .. } => Line::from(vec![
                 key!("j/k"),
-                hint!("navigate"),
+                hint!(Key::HintNavigate),
                 sep!(),
                 key!("Space"),
-                hint!("toggle"),
+                hint!(Key::HintToggle),
                 sep!(),
                 key!("Enter"),
-                hint!("run"),
+                hint!(Key::HintRun),
                 sep!(),
                 key!("Esc"),
-                hint!("cancel"),
+                hint!(Key::HintCancel),
             ]),
             SnippetPopup::QuickExecuteInput { .. } => Line::from(vec![
                 key!("Enter"),
-                hint!("run"),
+                hint!(Key::HintRun),
                 sep!(),
                 key!("Esc"),
-                hint!("cancel"),
+                hint!(Key::HintCancel),
             ]),
             SnippetPopup::Results { .. } => Line::from(vec![
                 key!("j/k"),
-                hint!("scroll"),
+                hint!(Key::HintScroll),
                 sep!(),
                 key!("Esc"),
-                hint!("close"),
+                hint!(Key::HintClose),
             ]),
         };
         frame.render_widget(
@@ -216,27 +227,27 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState)
             let line = match fm_popup {
                 FileManagerPopup::HostPicker { .. } => Line::from(vec![
                     key!("j/k"),
-                    hint!("navigate"),
+                    hint!(Key::HintNavigate),
                     sep!(),
                     key!("Enter"),
-                    hint!("connect"),
+                    hint!(Key::HintConnect),
                     sep!(),
                     key!("Esc"),
-                    hint!("cancel"),
+                    hint!(Key::HintCancel),
                 ]),
                 FileManagerPopup::DeleteConfirm { .. } => Line::from(vec![
                     key!("y"),
-                    hint!("confirm delete"),
+                    hint!(Key::HintConfirmDelete),
                     sep!(),
                     key!("n / Esc"),
-                    hint!("cancel"),
+                    hint!(Key::HintCancel),
                 ]),
                 FileManagerPopup::MkDir(_) | FileManagerPopup::Rename { .. } => Line::from(vec![
                     key!("Enter"),
-                    hint!("confirm"),
+                    hint!(Key::HintConfirm),
                     sep!(),
                     key!("Esc"),
-                    hint!("cancel"),
+                    hint!(Key::HintCancel),
                 ]),
                 FileManagerPopup::TransferProgress {
                     filename,
@@ -251,12 +262,17 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState)
                     };
                     Line::from(vec![
                         Span::styled(
-                            format!(" Transferring: {}  {}% ", filename, pct),
+                            format!(
+                                " {}: {}  {}% ",
+                                crate::i18n::t(view.lang, Key::HintTransferring),
+                                filename,
+                                pct
+                            ),
                             hint_style,
                         ),
                         sep!(),
                         key!("Esc"),
-                        hint!("cancel"),
+                        hint!(Key::HintCancel),
                     ])
                 }
             };
@@ -272,13 +288,13 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState)
     if hlv.tag_popup_open {
         let line = Line::from(vec![
             key!("j/k"),
-            hint!("navigate"),
+            hint!(Key::HintNavigate),
             sep!(),
             key!("Enter"),
-            hint!("select"),
+            hint!(Key::HintSelect),
             sep!(),
             key!("Esc"),
-            hint!("close"),
+            hint!(Key::HintClose),
         ]);
         frame.render_widget(
             Paragraph::new(line).style(Style::default().bg(Color::Reset)),
@@ -290,22 +306,22 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, view: &ViewState)
     // Global hints only - screen-specific hints are now in page headers.
     let spans = vec![
         key!("1"),
-        hint!("Dashboard"),
+        hint!(Key::NavDashboard),
         sep!(),
         key!("2"),
-        hint!("Files"),
+        hint!(Key::NavFiles),
         sep!(),
         key!("3"),
-        hint!("Snippets"),
+        hint!(Key::NavSnippets),
         sep!(),
         key!("4"),
-        hint!("Terminal"),
+        hint!(Key::NavTerminal),
         sep!(),
         key!("?"),
-        hint!("Help"),
+        hint!(Key::NavHelp),
         sep!(),
         key!("q"),
-        hint!("Quit"),
+        hint!(Key::NavQuit),
     ];
 
     frame.render_widget(

@@ -17,7 +17,7 @@ use omnyssh_core::ssh::sftp::{
 
 use crate::bridge;
 use crate::dto::FileEntryDto;
-use crate::error::CommandError;
+use crate::error::{unknown_host, CommandError};
 use crate::state::GuiState;
 
 /// A tab's dedicated core-event channel buffer. Comfortably absorbs the connect ack
@@ -34,9 +34,9 @@ pub async fn sftp_open(
     state: State<'_, GuiState>,
     host_name: String,
 ) -> Result<u64, CommandError> {
-    let host = state.host_by_name(&host_name).ok_or_else(|| CommandError {
-        message: format!("unknown host '{host_name}'"),
-    })?;
+    let host = state
+        .host_by_name(&host_name)
+        .ok_or_else(|| unknown_host(&host_name))?;
     // A dedicated channel per tab: its owner is the session id, so the forwarder can
     // attribute the core's session-less `sftp-*` events to this tab (§3.4).
     let (tx, rx) = mpsc::channel::<CoreEvent>(SFTP_EVENT_BUFFER);
@@ -50,9 +50,7 @@ pub async fn sftp_open(
                 identity::ask_passphrase(&state.engine_sender(), &host_name, path).await;
             }
             // The whole chain: the core wraps the cause in "SFTP SSH connect".
-            return Err(CommandError {
-                message: format!("{e:#}"),
-            });
+            return Err(CommandError::plain(format!("{e:#}")));
         }
     };
     let session_id = state.register_sftp(manager);
@@ -192,9 +190,9 @@ pub fn sftp_close(state: State<'_, GuiState>, session_id: u64) -> Result<(), Com
 #[specta::specta]
 pub async fn list_local_dir(path: String) -> Result<Vec<FileEntryDto>, CommandError> {
     // The whole chain: the OS reason ("Access is denied") is the useful part.
-    let entries = core_list_local_dir(&path).await.map_err(|e| CommandError {
-        message: format!("{e:#}"),
-    })?;
+    let entries = core_list_local_dir(&path)
+        .await
+        .map_err(|e| CommandError::plain(format!("{e:#}")))?;
     Ok(entries.iter().map(FileEntryDto::from).collect())
 }
 
@@ -212,7 +210,5 @@ pub fn list_local_roots() -> Vec<String> {
 pub async fn preview_local_file(path: String) -> Result<String, CommandError> {
     core_preview_local_file(&path)
         .await
-        .map_err(|e| CommandError {
-            message: e.to_string(),
-        })
+        .map_err(|e| CommandError::plain(e.to_string()))
 }

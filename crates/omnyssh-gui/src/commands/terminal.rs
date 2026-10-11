@@ -26,7 +26,7 @@ pub async fn terminal_open(
     // sync command on the main thread. Mirrors async `sftp_open`/`reload_hosts`.
     state
         .open_terminal(&host_name, cols, rows, on_output)
-        .map_err(|message| CommandError { message })
+        .map_err(CommandError::plain)
 }
 
 /// Send keystrokes / pasted bytes to a terminal (tech-gui.md §4.2). Input is
@@ -77,9 +77,7 @@ pub fn terminal_paste(webview: tauri::Webview) -> Result<(), CommandError> {
             use webkit2gtk::WebViewExt;
             platform.inner().execute_editing_command("PasteAsPlainText");
         })
-        .map_err(|e| CommandError {
-            message: e.to_string(),
-        })?;
+        .map_err(|e| CommandError::plain(e.to_string()))?;
     #[cfg(not(target_os = "linux"))]
     let _ = webview;
     Ok(())

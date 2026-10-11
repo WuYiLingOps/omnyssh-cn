@@ -7,7 +7,7 @@ import type { Session } from './sessions';
 import { newSession, type SftpSession } from './sftp';
 import { tunnels } from './tunnels';
 import { beginRun, clearRun, snippetRun } from './snippets';
-import { countLiveWork, describeLiveWork, handleCloseRequested, quitPrompt, type LiveWork } from './quit';
+import { countLiveWork, liveWorkParts, handleCloseRequested, quitPrompt, type LiveWork } from './quit';
 
 const NONE: LiveWork = { terminals: 0, transfers: 0, tunnels: 0, snippetRuns: 0 };
 
@@ -97,7 +97,7 @@ describe('handleCloseRequested', () => {
   it('asks in a window brought out of the taskbar or dock, after holding the close', async () => {
     tunnels.set(new Map([['web-1', { kind: 'up' }]]));
     await close();
-    expect(get(quitPrompt)).toBe('1 tunnel');
+    expect(get(quitPrompt)).toEqual([{ kind: 'tunnels', count: 1 }]);
     expect(order).toEqual(['preventDefault', 'unminimize', 'setFocus']);
   });
 
@@ -116,20 +116,22 @@ describe('handleCloseRequested', () => {
   });
 });
 
-describe('describeLiveWork', () => {
-  it('lists the counts, singular or plural, with "and" before the last', () => {
-    expect(describeLiveWork({ terminals: 2, transfers: 1, tunnels: 1, snippetRuns: 0 })).toBe(
-      '2 terminals, 1 transfer and 1 tunnel'
-    );
-    expect(describeLiveWork({ ...NONE, terminals: 1 })).toBe('1 terminal');
-    expect(describeLiveWork({ ...NONE, tunnels: 3, snippetRuns: 1 })).toBe('3 tunnels and 1 snippet run');
-    expect(describeLiveWork({ terminals: 1, transfers: 2, tunnels: 2, snippetRuns: 1 })).toBe(
-      '1 terminal, 2 transfers, 2 tunnels and 1 snippet run'
-    );
+describe('liveWorkParts', () => {
+  it('names each live tally, in display order, and drops the zeros', () => {
+    expect(liveWorkParts({ terminals: 2, transfers: 1, tunnels: 1, snippetRuns: 0 })).toEqual([
+      { kind: 'terminals', count: 2 },
+      { kind: 'transfers', count: 1 },
+      { kind: 'tunnels', count: 1 }
+    ]);
+    expect(liveWorkParts({ ...NONE, terminals: 1 })).toEqual([{ kind: 'terminals', count: 1 }]);
+    expect(liveWorkParts({ ...NONE, tunnels: 3, snippetRuns: 1 })).toEqual([
+      { kind: 'tunnels', count: 3 },
+      { kind: 'snippetRuns', count: 1 }
+    ]);
   });
 
-  it('is empty when nothing is live', () => {
-    expect(describeLiveWork(NONE)).toBe('');
+  it('is empty when nothing is live (so the quit question never opens)', () => {
+    expect(liveWorkParts(NONE)).toEqual([]);
   });
 });
 

@@ -66,8 +66,12 @@ pub async fn execute_snippet(
         .await?
         .into_iter()
         .find(|s| s.name == snippet_name)
-        .ok_or_else(|| CommandError {
-            message: format!("snippet '{snippet_name}' not found"),
+        .ok_or_else(|| {
+            CommandError::with_params(
+                "snippetNotFound",
+                format!("snippet '{snippet_name}' not found"),
+                [("snippet", snippet_name.as_str())],
+            )
         })?;
 
     let command = substitute_params(&snippet.command, snippet.params.as_deref(), &params);
@@ -75,9 +79,10 @@ pub async fn execute_snippet(
     // Resolve full host records here; secret material stays backend-side (§3.4).
     let hosts = state.hosts_by_name(&host_names);
     if hosts.is_empty() {
-        return Err(CommandError {
-            message: "no matching hosts to execute on".to_string(),
-        });
+        return Err(CommandError::coded(
+            "noMatchingHosts",
+            "no matching hosts to execute on",
+        ));
     }
 
     for host in hosts {
@@ -105,12 +110,8 @@ pub async fn execute_snippet(
 async fn load() -> Result<Vec<Snippet>, CommandError> {
     tauri::async_runtime::spawn_blocking(load_snippets)
         .await
-        .map_err(|e| CommandError {
-            message: format!("snippet load task failed: {e}"),
-        })?
-        .map_err(|e| CommandError {
-            message: e.to_string(),
-        })
+        .map_err(|e| CommandError::coded("taskFailed", format!("snippet load task failed: {e}")))?
+        .map_err(|e| CommandError::plain(e.to_string()))
 }
 
 /// Load the list, apply `mutate`, and write it back atomically off the async worker.
@@ -123,12 +124,8 @@ async fn persist(
         save_snippets(&snippets)
     })
     .await
-    .map_err(|e| CommandError {
-        message: format!("snippet save task failed: {e}"),
-    })?
-    .map_err(|e| CommandError {
-        message: e.to_string(),
-    })
+    .map_err(|e| CommandError::coded("taskFailed", format!("snippet save task failed: {e}")))?
+    .map_err(|e| CommandError::plain(e.to_string()))
 }
 
 /// Open a fresh SSH session, run `command`, disconnect, and return stdout or a

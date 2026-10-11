@@ -42,6 +42,10 @@ impl Default for GeneralConfig {
 pub struct UiConfig {
     /// One of: `default`, `dracula`, `nord`, `gruvbox`.
     pub theme: String,
+    /// Interface language as a BCP-47 short code.  One of: `en`, `zh-Hans`.
+    /// Unknown values fall back to English so a hand-edited config never
+    /// leaves the UI without strings.
+    pub language: String,
     // TODO(future-stage): these fields are parsed from user config but not yet
     // wired up to the renderer.  They are kept in the struct so existing config
     // files are accepted without error; the renderer will consume them once the
@@ -73,12 +77,32 @@ impl UiConfig {
     pub fn is_valid_theme(name: &str) -> bool {
         Self::available_themes().contains(&name)
     }
+
+    /// Returns the list of all available built-in UI language codes.
+    ///
+    /// These are BCP-47 short codes; `en` is the default and the fallback.
+    pub fn available_languages() -> &'static [&'static str] {
+        &["en", "zh-Hans"]
+    }
+
+    /// Checks if the given language code is a supported one.
+    ///
+    /// # Examples
+    /// ```
+    /// # use omnyssh_core::config::app_config::UiConfig;
+    /// assert!(UiConfig::is_valid_language("zh-Hans"));
+    /// assert!(!UiConfig::is_valid_language("fr"));
+    /// ```
+    pub fn is_valid_language(code: &str) -> bool {
+        Self::available_languages().contains(&code)
+    }
 }
 
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
             theme: String::from("default"),
+            language: String::from("en"),
             show_ip: true,
             show_uptime: true,
             card_layout: String::from("grid"),
@@ -261,6 +285,26 @@ pub fn save_theme_to_config(theme_name: &str) -> anyhow::Result<()> {
     persist_config(|config| config.ui.theme = theme_name.to_string())
 }
 
+/// Saves the interface language to the config file's `[ui]` section.
+///
+/// The code is validated against [`UiConfig::available_languages`] first; an
+/// unsupported code is rejected rather than written, so a bad value can never
+/// reach the next startup.
+///
+/// # Errors
+/// Returns an error if `code` is not a supported language, or if the config
+/// file cannot be written or parsed.
+pub fn save_language_to_config(code: &str) -> anyhow::Result<()> {
+    if !UiConfig::is_valid_language(code) {
+        anyhow::bail!(
+            "Unknown language '{}'. Available languages: {}",
+            code,
+            UiConfig::available_languages().join(", ")
+        );
+    }
+    persist_config(|config| config.ui.language = code.to_string())
+}
+
 /// Saves the update-checker preferences to the config file's `[update]`
 /// section.
 ///
@@ -301,5 +345,33 @@ mod tests {
         let parsed: AppConfig = toml::from_str(&serialized).unwrap();
         assert!(!parsed.update.check_on_startup);
         assert_eq!(parsed.update.skip_version, "1.2.3");
+    }
+
+    #[test]
+    fn ui_language_defaults_to_english() {
+        assert_eq!(UiConfig::default().language, "en");
+        assert!(UiConfig::is_valid_language("en"));
+        assert!(UiConfig::is_valid_language("zh-Hans"));
+        assert!(!UiConfig::is_valid_language("fr"));
+        assert!(!UiConfig::is_valid_language(""));
+    }
+
+    /// A config file written before the language option existed must still
+    /// parse, falling back to English.
+    #[test]
+    fn config_without_language_section_parses() {
+        let cfg: AppConfig = toml::from_str("[ui]\ntheme = \"nord\"\n").unwrap();
+        assert_eq!(cfg.ui.theme, "nord");
+        assert_eq!(cfg.ui.language, "en");
+    }
+
+    #[test]
+    fn ui_language_round_trips_through_toml() {
+        let mut cfg = AppConfig::default();
+        cfg.ui.language = "zh-Hans".to_string();
+
+        let serialized = toml::to_string_pretty(&cfg).unwrap();
+        let parsed: AppConfig = toml::from_str(&serialized).unwrap();
+        assert_eq!(parsed.ui.language, "zh-Hans");
     }
 }
