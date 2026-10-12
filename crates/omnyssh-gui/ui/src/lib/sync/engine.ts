@@ -89,6 +89,9 @@ export interface CloudSyncState {
   startupChecked: boolean;
   /** The GitHub token has expired (API 401): reconnect required, sync paused. */
   tokenInvalid: boolean;
+  /** Both-sides-modified count from the most recent merge (local wins) — shown
+   *  so a remote edit isn't silently swallowed. Cleared on the next sync. */
+  lastMergeConflicts: number | null;
 }
 
 const initialState: CloudSyncState = {
@@ -110,6 +113,7 @@ const initialState: CloudSyncState = {
   emptyVaultPending: null,
   startupChecked: false,
   tokenInvalid: false,
+  lastMergeConflicts: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -615,7 +619,8 @@ function logSyncOutcome(reason: SyncOptions["reason"], r: SyncResult): void {
     none: "cloud and local are identical",
   };
   if (r.success) {
-    console.info(`cloud sync done (${reason}): ${what[r.action]}${r.version != null ? ` (v${r.version})` : ""}`);
+    const conflicts = r.mergeConflicts != null ? `; ${r.mergeConflicts} both-side edit(s) resolved local-first` : "";
+    console.info(`cloud sync done (${reason}): ${what[r.action]}${r.version != null ? ` (v${r.version})` : ""}${conflicts}`);
     return;
   }
   if (!r.error) return;
@@ -670,6 +675,9 @@ async function runSync(opts: SyncOptions, seq: number): Promise<SyncResult> {
       state.syncState = "IDLE";
       state.shrinkFinding = null;
     }
+    // The merge-conflict note belongs to a round that actually landed (applied
+    // locally / adopted); a BLOCKED round must not claim conflicts it never wrote.
+    state.lastMergeConflicts = result.mergeConflicts ?? null;
     notify();
     return result;
   };
@@ -777,7 +785,13 @@ async function runSync(opts: SyncOptions, seq: number): Promise<SyncResult> {
   // skip a pointless upload.
   if (payloadFingerprint(mergedPayload) === payloadFingerprint(remotePayload)) {
     await adoptRemote(mergedPayload, remoteFile, resourceId!, opts.applyLocal);
-    return finish({ success: true, action: "download", version: remoteFile.meta.version, mergedPayload });
+    return finish({
+      success: true,
+      action: "download",
+      version: remoteFile.meta.version,
+      mergedPayload,
+      mergeConflicts: merged.hadConflicts ? merged.summary.modified.conflicts : undefined,
+    });
   }
 
   // Upload the merge (version = remote + 1), apply locally, commit base/anchor.
@@ -801,11 +815,12 @@ async function runSync(opts: SyncOptions, seq: number): Promise<SyncResult> {
     action: "merge",
     version: encrypted.meta.version,
     mergedPayload,
+    mergeConflicts: merged.hadConflicts ? merged.summary.modified.conflicts : undefined,
   });
 }
 
 function hasLocalData(payload: SyncPayload): boolean {
-  return payload.hosts.length > 0 || payload.snippets.length > 0 || payload.settings !== undefined;
+  return payload.hosts.length > 0 || payload.snippets.length > 0;
 }
 
 // ---------------------------------------------------------------------------

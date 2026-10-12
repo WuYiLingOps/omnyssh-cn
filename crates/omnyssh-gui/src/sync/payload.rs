@@ -180,6 +180,13 @@ pub async fn sync_export_hosts(
 /// password untouched — the default (passwords excluded) payload can thus
 /// never wipe a device's saved credentials.
 ///
+/// Orphan cleanup: hosts present before the apply but absent from the merged
+/// payload were deleted on another device, so their stored login passwords are
+/// removed too (best effort) — mirroring the UI's `delete_host` path and
+/// DockPilot's `cleanup_removed`; without this the secret store would
+/// accumulate credentials for hosts that no longer exist anywhere. Runs only
+/// after `save_hosts` succeeded, so a failed write never costs a password.
+///
 /// The frontend calls `reload_hosts` afterwards to refresh the merged cache,
 /// restart the pollers and broadcast `hosts-loaded`.
 #[tauri::command]
@@ -188,6 +195,18 @@ pub async fn sync_apply_hosts(hosts: Vec<HostSyncDto>) -> Result<(), CommandErro
     tauri::async_runtime::spawn_blocking(move || {
         let dir = platform::app_config_dir()
             .ok_or_else(|| CommandError::plain("cannot determine the app config directory"))?;
+        // Names stored before the replace, for the post-apply orphan diff. A
+        // read failure yields an empty list: cleanup then finds nothing —
+        // never deletes on a blind guess.
+        let previous_names: Vec<String> = load_hosts()
+            .map(|hosts| {
+                hosts
+                    .iter()
+                    .filter(|h| h.source == HostSource::Manual)
+                    .map(|h| h.name.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
         // Passwords first, so a store refusal fails the command before any
         // host state is written (mirrors `save_host`'s ordering).
         for host in &hosts {
@@ -196,8 +215,16 @@ pub async fn sync_apply_hosts(hosts: Vec<HostSyncDto>) -> Result<(), CommandErro
                     .map_err(CommandError::plain)?;
             }
         }
-        let converted: Vec<Host> = hosts.into_iter().map(HostSyncDto::into_host).collect();
-        save_hosts(&converted).map_err(|e| CommandError::plain(e.to_string()))
+        let converted: Vec<Host> = hosts.iter().map(|h| h.clone().into_host()).collect();
+        save_hosts(&converted).map_err(|e| CommandError::plain(e.to_string()))?;
+        let incoming: std::collections::HashSet<&str> =
+            hosts.iter().map(|h| h.name.as_str()).collect();
+        for name in &previous_names {
+            if !incoming.contains(name.as_str()) {
+                secrets::delete_login_password(&dir, name);
+            }
+        }
+        Ok(())
     })
     .await
     .map_err(|e| CommandError::coded("taskFailed", format!("sync host apply task failed: {e}")))?

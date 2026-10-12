@@ -2,10 +2,9 @@
  * Cloud sync domain types and constants — OmnySSH flavour (the engine is
  * ported from DockPilot's Gist encrypted sync, itself derived from Netcatty).
  *
- * Phase 1 payload: manual hosts + snippets only. Settings are a Phase 2
- * placeholder (`settings?: Record<string, unknown>` — the TUI and GUI keep
- * different settings models, so a whitelist sync would drag in mapping work
- * for little gain).
+ * Phase 1 payload: manual hosts + snippets only. Settings are out of scope —
+ * the TUI and GUI keep different settings models, so a whitelist sync would
+ * drag in mapping work for little gain.
  */
 
 import type { HostSyncDto, SnippetDto } from "$lib/bindings";
@@ -59,15 +58,15 @@ export type SyncedHost = HostSyncDto;
 /** A synced snippet — the same shape `snippets.toml` holds, keyed on `name`. */
 export type SyncedSnippet = SnippetDto;
 
-/** Decrypted sync payload. Phase 1 carries manual hosts + snippets; settings
- *  stay a Phase 2 placeholder (field whitelist still to be decided). */
+/** Decrypted sync payload. Phase 1 carries manual hosts + snippets only —
+ *  settings were cut from scope (the TUI and GUI keep different models); a
+ *  Phase 2 sync would add the field back with a whitelist. */
 export interface SyncPayload {
   /** Manual entries only — SSH-config imports are re-derived per device. */
   hosts: SyncedHost[];
   snippets: SyncedSnippet[];
   /** Stripped before fingerprinting. */
   syncedAt: number;
-  settings?: Record<string, unknown>;
 }
 
 // ============================================================================
@@ -118,6 +117,10 @@ export interface SyncResult {
   /** Blocked by the shrink guard. */
   shrinkBlocked?: boolean;
   finding?: ShrinkFinding;
+  /** Both-sides-modified fields the merge resolved local-first — informational,
+   *  the sync itself succeeded; the UI surfaces it so a remote edit isn't
+   *  silently swallowed. */
+  mergeConflicts?: number;
 }
 
 export interface ConflictInfo {
