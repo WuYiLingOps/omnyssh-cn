@@ -6,10 +6,10 @@
 
 <img src="assets/gui.webp" alt="OmnySSH GUI dashboard" width="900">
 
-[![Downloads](https://img.shields.io/github/downloads/WuYiLingOps/omnyssh/total?label=total%20installs&color=2ea44f)](https://github.com/WuYiLingOps/omnyssh/releases)
-[![Latest release](https://img.shields.io/github/v/release/WuYiLingOps/omnyssh?label=latest)](https://github.com/WuYiLingOps/omnyssh/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/WuYiLingOps/omnyssh-cn/total?label=total%20installs&color=2ea44f)](https://github.com/WuYiLingOps/omnyssh-cn/releases)
+[![Latest release](https://img.shields.io/github/v/release/WuYiLingOps/omnyssh-cn?label=latest)](https://github.com/WuYiLingOps/omnyssh-cn/releases/latest)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Build](https://img.shields.io/github/actions/workflow/status/WuYiLingOps/omnyssh/ci.yml?branch=main)](https://github.com/WuYiLingOps/omnyssh/actions)
+[![Build](https://img.shields.io/github/actions/workflow/status/WuYiLingOps/omnyssh-cn/ci.yml?branch=main)](https://github.com/WuYiLingOps/omnyssh-cn/actions)
 
 **[项目简介](#项目简介)** •
 **[功能特性](#主要功能特性)** •
@@ -56,7 +56,7 @@
 
 ### GUI 桌面客户端
 
-前往 [**Releases 发行版页面**](https://github.com/WuYiLingOps/omnyssh/releases) 下载对应平台的安装包：
+前往 [**Releases 发行版页面**](https://github.com/WuYiLingOps/omnyssh-cn/releases) 下载对应平台的安装包：
 
 | 操作系统平台 | 文件格式 | 说明 |
 |---|---|---|
@@ -126,10 +126,10 @@ OmnySSH 起源于终端，TUI 版本至今仍在维护，仍在发版。习惯�
 
 底层是同一个引擎：本仓库是一个 cargo workspace，`crates/omnyssh-core` 承载核心逻辑，各前端构建于其上。仪表盘、SFTP、命令片段、多会话标签、模糊搜索，外加四套主题（`default`、`dracula`、`nord`、`gruvbox`）以及可在 `config.toml` 中重新映射的快捷键。界面提供英文和简体中文——在设置中选择，或用 `--lang zh-Hans` 启动。
 
-从 [Releases](https://github.com/WuYiLingOps/omnyssh/releases) 下载预编译的 TUI 二进制文件（文件名以 `omny-*` 开头，覆盖 Linux、macOS、Windows 和 Termux），或直接用 cargo 从本仓库安装：
+从 [Releases](https://github.com/WuYiLingOps/omnyssh-cn/releases) 下载预编译的 TUI 二进制文件（文件名以 `omny-*` 开头，覆盖 Linux、macOS、Windows 和 Termux），或直接用 cargo 从本仓库安装：
 
 ```bash
-cargo install --git https://github.com/WuYiLingOps/omnyssh omnyssh --locked
+cargo install --git https://github.com/WuYiLingOps/omnyssh-cn omnyssh --locked
 ```
 
 然后运行 `omny`。按 `a` 添加主机，`/` 搜索，`g` 按标签分组，`?` 查看帮助，`Shift+K` 为选中的主机配置密钥。
@@ -179,8 +179,8 @@ Apache 2.0，详见 [LICENSE](LICENSE)。
 
 ### 如果 OmnySSH 帮你省下了一个终端标签页，就给仓库点个 ⭐ 吧
 
-[报告 Bug](https://github.com/WuYiLingOps/omnyssh/issues) •
-[功能建议](https://github.com/WuYiLingOps/omnyssh/issues) •
+[报告 Bug](https://github.com/WuYiLingOps/omnyssh-cn/issues) •
+[功能建议](https://github.com/WuYiLingOps/omnyssh-cn/issues) •
 [官方项目原址](https://github.com/timhartmann7/omnyssh)
 
 </div>
