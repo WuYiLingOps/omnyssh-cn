@@ -29,10 +29,8 @@ pub fn answer_password(
     password: Option<String>,
     remember: bool,
 ) -> Result<(), CommandError> {
-    let answer = password.map(|password| omnyssh_core::ssh::password::PromptAnswer {
-        password,
-        remember,
-    });
+    let answer =
+        password.map(|password| omnyssh_core::ssh::password::PromptAnswer { password, remember });
     omnyssh_core::ssh::password::answer(request_id, answer)
         .map_err(|e| CommandError::plain(e.to_string()))
 }

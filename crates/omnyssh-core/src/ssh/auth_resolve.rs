@@ -90,7 +90,10 @@ pub fn resolve(host: &Host) -> AuthPlan {
         }
     };
     let Some(dir) = platform::app_config_dir() else {
-        tracing::warn!("host {}: no app config directory, keychain auth skipped", host.name);
+        tracing::warn!(
+            "host {}: no app config directory, keychain auth skipped",
+            host.name
+        );
         return plan;
     };
 
@@ -216,7 +219,10 @@ mod tests {
             assert_eq!(plan.username_override.as_deref(), Some("deploy"));
             let kc = plan.keychain.as_ref().expect("keychain key");
             assert_eq!(kc.entry_id, key.id);
-            assert_eq!(kc.key.public_key().fingerprint(HashAlg::Sha256).to_string(), key.fingerprint);
+            assert_eq!(
+                kc.key.public_key().fingerprint(HashAlg::Sha256).to_string(),
+                key.fingerprint
+            );
             assert!(plan.identity_password.is_none());
             // The username override lands on the dialed host.
             let dialled = plan.apply_to(&host("web", "", &bound.id));

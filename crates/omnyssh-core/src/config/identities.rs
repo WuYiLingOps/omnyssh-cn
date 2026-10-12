@@ -111,17 +111,11 @@ pub fn save_identities(file: &IdentitiesFile) -> anyhow::Result<()> {
 
     let content = toml::to_string_pretty(file).context("Failed to serialise identities")?;
     let tmp = path.with_extension("toml.tmp");
-    std::fs::write(&tmp, content)
-        .with_context(|| format!("Failed to write {}", tmp.display()))?;
+    std::fs::write(&tmp, content).with_context(|| format!("Failed to write {}", tmp.display()))?;
     if let Err(e) = std::fs::rename(&tmp, &path) {
         let _ = std::fs::remove_file(&tmp);
-        return Err(e).with_context(|| {
-            format!(
-                "Failed to rename {} to {}",
-                tmp.display(),
-                path.display()
-            )
-        });
+        return Err(e)
+            .with_context(|| format!("Failed to rename {} to {}", tmp.display(), path.display()));
     }
     #[cfg(unix)]
     {
@@ -138,10 +132,7 @@ pub fn save_identities(file: &IdentitiesFile) -> anyhow::Result<()> {
 /// How many hosts and identities reference the keychain entry `entry_id`.
 pub fn key_refs(hosts: &[Host], identities: &[Identity], entry_id: &str) -> usize {
     hosts.iter().filter(|h| h.key_id == entry_id).count()
-        + identities
-            .iter()
-            .filter(|i| i.key_id == entry_id)
-            .count()
+        + identities.iter().filter(|i| i.key_id == entry_id).count()
 }
 
 /// How many hosts reference the identity `identity_id`.
@@ -174,7 +165,8 @@ pub fn read_private_key_file(path: &str) -> Result<String, String> {
             MAX_PEM_SIZE / 1024
         ));
     }
-    let content = std::fs::read_to_string(&expanded).map_err(|e| format!("cannot read {path}: {e}"))?;
+    let content =
+        std::fs::read_to_string(&expanded).map_err(|e| format!("cannot read {path}: {e}"))?;
     if !content.contains("-----BEGIN") {
         return Err(format!(
             "{path} does not look like a private key (no PEM header)"
@@ -406,7 +398,7 @@ pub fn delete_key_entry(id: &str, hosts: &[Host]) -> Result<(), usize> {
         return Ok(()); // already gone: the desired end state holds
     }
     file.keys.retain(|k| k.id != id);
-    if let Err(_) = save_identities(&file) {
+    if save_identities(&file).is_err() {
         return Err(0);
     }
 
@@ -504,8 +496,7 @@ pub fn save_identity(
             Ok(())
         }
         Some(p) => {
-            secrets::save_identity_password(&dir, &identity.id, p)
-                .map_err(|e| e)?;
+            secrets::save_identity_password(&dir, &identity.id, p)?;
             Ok::<(), String>(())
         }
         None => Ok(()),
@@ -536,7 +527,7 @@ pub fn delete_identity(id: &str, hosts: &[Host]) -> Result<(), usize> {
         return Ok(());
     }
     file.identities.retain(|i| i.id != id);
-    if let Err(_) = save_identities(&file) {
+    if save_identities(&file).is_err() {
         return Err(0);
     }
 
@@ -612,8 +603,7 @@ mod tests {
             let fresh = save_key_entry(None, "enc2", Some(ENCRYPTED_PEM), Some("nope"));
             assert!(fresh.unwrap_err().contains("passphrase"));
             // Passphrase update without re-providing the PEM verifies first.
-            let updated =
-                save_key_entry(Some(&entry.id), "enc", None, Some("new horse")).unwrap();
+            let updated = save_key_entry(Some(&entry.id), "enc", None, Some("new horse")).unwrap();
             assert_eq!(
                 load_key_passphrase(dir, &updated.id).as_deref(),
                 Some("new horse")
@@ -661,13 +651,21 @@ mod tests {
 
     #[test]
     fn reference_counts_cover_hosts_and_identities() {
-        let hosts = vec![host_ref("a", "k1", "i1"), host_ref("b", "k1", ""), host("c")];
+        let hosts = vec![
+            host_ref("a", "k1", "i1"),
+            host_ref("b", "k1", ""),
+            host("c"),
+        ];
         let identities = vec![Identity {
             id: "i2".into(),
             key_id: "k1".into(),
             ..Identity::default()
         }];
-        assert_eq!(key_refs(&hosts, &identities, "k1"), 3, "2 hosts + 1 identity");
+        assert_eq!(
+            key_refs(&hosts, &identities, "k1"),
+            3,
+            "2 hosts + 1 identity"
+        );
         assert_eq!(key_refs(&hosts, &identities, "k2"), 0);
         assert_eq!(identity_refs(&hosts, "i1"), 1);
         assert_eq!(identity_refs(&hosts, "i2"), 0);

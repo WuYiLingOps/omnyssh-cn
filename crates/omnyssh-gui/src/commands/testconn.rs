@@ -40,7 +40,9 @@ const AUTH_BUDGET: Duration = Duration::from_secs(20);
 /// in memory on the temporary `Host` for this attempt only.
 #[tauri::command]
 #[specta::specta]
-pub async fn test_host_connection(input: HostInputDto) -> Result<TestConnectionResultDto, CommandError> {
+pub async fn test_host_connection(
+    input: HostInputDto,
+) -> Result<TestConnectionResultDto, CommandError> {
     crate::dto::check_forwards(&input.local_forwards)?;
     // The test never writes, so the three-valued pins (`None` = "unchanged")
     // have nothing to be unchanged *from*; treat omitted as empty, mirroring the
@@ -85,27 +87,6 @@ pub async fn test_host_connection(input: HostInputDto) -> Result<TestConnectionR
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn input() -> HostInputDto {
-        HostInputDto {
-            name: "web".to_string(),
-            hostname: "203.0.113.10".to_string(),
-            user: "root".to_string(),
-            port: 22,
-            identity_file: None,
-            password: None,
-            proxy_jump: None,
-            key_id: None,
-            identity_id: None,
-            tags: vec![],
-            notes: None,
-            monitoring: None,
-            monitor_port: None,
-            local_forwards: vec![],
-            tunnel_autostart: false,
-            forward_agent: false,
-        }
-    }
 
     #[test]
     fn success_result_has_no_error() {

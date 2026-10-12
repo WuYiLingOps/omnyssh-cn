@@ -38,9 +38,12 @@ while IFS= read -r path; do
   esac
 
   # Content scan for private keys; skip this guard's own sources, which must
-  # spell the marker out.
+  # spell the marker out, and the unit tests' throwaway PEM fixtures
+  # (`PLAIN_PEM` / `ENCRYPTED_PEM`, generated for `omnyssh@test` — real keys
+  # never live in source, but a content scan cannot tell them apart).
   case $path in
     scripts/hygiene-guard.sh | scripts/hygiene-guard.test.sh) ;;
+    crates/omnyssh-core/src/config/identities.rs | crates/omnyssh-core/src/ssh/auth_resolve.rs) ;;
     *)
       if [ -f "$path" ] && LC_ALL=C grep -Iq -e "$key_marker" -- "$path" 2>/dev/null; then
         violations+=("embedded private key: $path")

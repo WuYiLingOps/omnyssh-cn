@@ -24,8 +24,8 @@ use commands::identities::{
     delete_identity, delete_key_entry, list_identities, list_key_entries, read_private_key_file,
     save_identity, save_key_entry,
 };
-use commands::secrets::{host_secret_backend, set_host_secret};
 use commands::keysetup::start_key_setup;
+use commands::secrets::{host_secret_backend, set_host_secret};
 use commands::sftp::{
     list_local_dir, list_local_roots, preview_local_file, sftp_cancel, sftp_close, sftp_delete,
     sftp_download, sftp_list, sftp_mkdir, sftp_open, sftp_preview, sftp_rename, sftp_upload,
@@ -39,15 +39,15 @@ use commands::testconn::test_host_connection;
 use commands::tray::set_tray_behavior;
 use commands::tunnels::{tunnel_start, tunnel_stop};
 use commands::update::{check_update, install_update, load_update_config, save_update_config};
+use omnyssh_core::event::{CoreEvent, SessionId};
+use omnyssh_core::ssh::pty::PtyManager;
+use state::GuiState;
 use sync::github_sync::{
     github_device_flow_poll, github_device_flow_start, github_gist_raw_content,
     sync_delete_github_token, sync_delete_sync_password, sync_load_github_token,
     sync_load_sync_password, sync_save_github_token, sync_save_sync_password,
 };
 use sync::payload::{sync_apply_hosts, sync_apply_snippets, sync_export_hosts};
-use omnyssh_core::event::{CoreEvent, SessionId};
-use omnyssh_core::ssh::pty::PtyManager;
-use state::GuiState;
 use tauri::webview::PageLoadEvent;
 use tauri::Manager;
 use tauri_plugin_window_state::StateFlags;

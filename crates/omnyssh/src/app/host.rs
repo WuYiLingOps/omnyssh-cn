@@ -685,8 +685,9 @@ impl App {
         let host_name = host_name.to_string();
         let password = password.map(str::to_string);
         let result = tokio::task::spawn_blocking(move || match password {
-            Some(pw) => omnyssh_core::secrets::save_login_password(&dir, &host_name, &pw)
-                .map(|_| ()),
+            Some(pw) => {
+                omnyssh_core::secrets::save_login_password(&dir, &host_name, &pw).map(|_| ())
+            }
             None => {
                 omnyssh_core::secrets::delete_login_password(&dir, &host_name);
                 Ok(())

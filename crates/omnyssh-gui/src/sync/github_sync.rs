@@ -129,7 +129,10 @@ pub async fn github_device_flow_start(
     .await?;
 
     let status = res.status();
-    let text = res.text().await.map_err(|e| format!("failed to read the response: {e}"))?;
+    let text = res
+        .text()
+        .await
+        .map_err(|e| format!("failed to read the response: {e}"))?;
     if !status.is_success() {
         return Err(format!("GitHub device flow failed: {status} - {text}"));
     }
@@ -190,7 +193,10 @@ pub async fn github_device_flow_poll(
     .await?;
 
     let status = res.status();
-    let text = res.text().await.map_err(|e| format!("failed to read the response: {e}"))?;
+    let text = res
+        .text()
+        .await
+        .map_err(|e| format!("failed to read the response: {e}"))?;
     // A body carrying an `error` field (pending / slow_down / expired / denied)
     // or a token both pass through verbatim.
     let is_json = serde_json::from_str::<serde_json::Value>(&text)
@@ -239,7 +245,10 @@ pub async fn github_gist_raw_content(
     .await?;
 
     let status = res.status();
-    let text = res.text().await.map_err(|e| format!("failed to read the response: {e}"))?;
+    let text = res
+        .text()
+        .await
+        .map_err(|e| format!("failed to read the response: {e}"))?;
     if !status.is_success() {
         return Err(format!(
             "failed to download the full Gist content: {status} - {}",
@@ -279,8 +288,8 @@ pub fn sync_load_github_token(
     backend: String,
 ) -> Result<Option<String>, String> {
     let dir = secret_dir(&app)?;
-    let parsed =
-        SecretBackend::parse(&backend).ok_or_else(|| format!("unknown secret backend: {backend}"))?;
+    let parsed = SecretBackend::parse(&backend)
+        .ok_or_else(|| format!("unknown secret backend: {backend}"))?;
     store::load_secret(&dir, TOKEN_KEY_ID, parsed)
 }
 
@@ -289,8 +298,8 @@ pub fn sync_load_github_token(
 #[specta::specta]
 pub fn sync_delete_github_token(app: tauri::AppHandle, backend: String) -> Result<(), String> {
     let dir = secret_dir(&app)?;
-    let parsed =
-        SecretBackend::parse(&backend).ok_or_else(|| format!("unknown secret backend: {backend}"))?;
+    let parsed = SecretBackend::parse(&backend)
+        .ok_or_else(|| format!("unknown secret backend: {backend}"))?;
     store::delete_secret(&dir, TOKEN_KEY_ID, parsed)?;
     tracing::info!("GitHub token deleted (cloud sync disconnected)");
     Ok(())
@@ -308,7 +317,9 @@ pub fn sync_delete_github_token(app: tauri::AppHandle, backend: String) -> Resul
 pub fn sync_save_sync_password(app: tauri::AppHandle, password: String) -> Result<String, String> {
     let dir = secret_dir(&app)?;
     let backend = store::save_secret(&dir, SYNC_PASSWORD_KEY_ID, &password).map_err(|e| {
-        tracing::warn!("failed to save the sync password; held in memory for this session only: {e}");
+        tracing::warn!(
+            "failed to save the sync password; held in memory for this session only: {e}"
+        );
         e
     })?;
     Ok(backend.as_str().to_string())
@@ -323,8 +334,8 @@ pub fn sync_load_sync_password(
     backend: String,
 ) -> Result<Option<String>, String> {
     let dir = secret_dir(&app)?;
-    let parsed =
-        SecretBackend::parse(&backend).ok_or_else(|| format!("unknown secret backend: {backend}"))?;
+    let parsed = SecretBackend::parse(&backend)
+        .ok_or_else(|| format!("unknown secret backend: {backend}"))?;
     store::load_secret(&dir, SYNC_PASSWORD_KEY_ID, parsed).map_err(|e| {
         tracing::warn!("failed to read the remembered sync password: {e}");
         e
@@ -337,8 +348,8 @@ pub fn sync_load_sync_password(
 #[specta::specta]
 pub fn sync_delete_sync_password(app: tauri::AppHandle, backend: String) -> Result<(), String> {
     let dir = secret_dir(&app)?;
-    let parsed =
-        SecretBackend::parse(&backend).ok_or_else(|| format!("unknown secret backend: {backend}"))?;
+    let parsed = SecretBackend::parse(&backend)
+        .ok_or_else(|| format!("unknown secret backend: {backend}"))?;
     store::delete_secret(&dir, SYNC_PASSWORD_KEY_ID, parsed)?;
     tracing::info!("remembered sync password cleared");
     Ok(())
@@ -411,11 +422,16 @@ mod tests {
         // 1. Start: a device_code / user_code pair is issued.
         let start = github_device_flow_start(client_id.clone(), None)
             .await
-            .expect("device flow start should succeed (check client_id and the Device Flow switch)");
+            .expect(
+                "device flow start should succeed (check client_id and the Device Flow switch)",
+            );
         assert!(!start.device_code.is_empty());
         assert!(!start.user_code.is_empty());
         assert!(start.interval >= 5, "poll interval floor is 5 seconds");
-        assert!(start.expires_at > now_millis(), "expiry should be in the future");
+        assert!(
+            start.expires_at > now_millis(),
+            "expiry should be in the future"
+        );
 
         // 2. Poll (user has not authorized) → GitHub answers error=authorization_pending,
         //    passed through verbatim.

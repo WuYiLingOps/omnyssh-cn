@@ -54,6 +54,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      # libdbus-1-dev: the core crate's `keyring` dependency pulls dbus-secret-service
+      # on Linux, whose build script needs the dbus-1 pkg-config module. The GUI job
+      # gets it transitively from libwebkit2gtk-4.1-dev; the other Linux jobs must
+      # install it themselves.
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
+
       - name: Build
         run: cargo build --verbose
 
@@ -170,6 +178,12 @@ jobs:
           key: ${{ runner.os }}-cargo-independence-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
+
+      # See the same step in build-and-test: keyring's dbus-secret-service needs
+      # the dbus-1 pkg-config module, and this job compiles the core crate too.
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
 
       - name: Remove Node/npm from PATH
         run: |

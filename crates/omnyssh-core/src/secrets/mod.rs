@@ -11,8 +11,9 @@ pub mod store;
 
 use std::path::Path;
 
-pub use store::{delete_secret, delete_secret_any, load_secret, load_secret_any, save_secret,
-                SecretBackend};
+pub use store::{
+    delete_secret, delete_secret_any, load_secret, load_secret_any, save_secret, SecretBackend,
+};
 
 /// Key id of a host's login password: `login/{name}`. The host name is the
 /// entity id (hosts are upserted by name), so this must stay stable — the
@@ -145,7 +146,11 @@ pub fn load_login_password(dir: &Path, host_name: &str) -> Option<String> {
 
 /// Saves the login password for `host_name`. Blocking (keychain I/O) — call
 /// from a blocking context.
-pub fn save_login_password(dir: &Path, host_name: &str, password: &str) -> Result<SecretBackend, String> {
+pub fn save_login_password(
+    dir: &Path,
+    host_name: &str,
+    password: &str,
+) -> Result<SecretBackend, String> {
     save_secret(dir, &login_key(host_name), password)
 }
 
@@ -161,7 +166,10 @@ pub fn delete_login_password(dir: &Path, host_name: &str) {
 /// Neither backend is recorded anywhere, so both are probed: the keychain
 /// first (what a save prefers, errors soft — an unusable keychain counts as a
 /// miss), then the encrypted file (its errors are real).
-pub fn login_password_backend(dir: &Path, host_name: &str) -> Result<Option<SecretBackend>, String> {
+pub fn login_password_backend(
+    dir: &Path,
+    host_name: &str,
+) -> Result<Option<SecretBackend>, String> {
     let key = login_key(host_name);
     match load_secret(dir, &key, SecretBackend::Keyring) {
         Ok(Some(_)) => return Ok(Some(SecretBackend::Keyring)),
@@ -187,13 +195,16 @@ pub fn rename_login_password(dir: &Path, old_name: &str, new_name: &str) {
     };
     match save_login_password(dir, new_name, &password) {
         Ok(_) => delete_login_password(dir, old_name),
-        Err(e) => tracing::warn!("failed to move the saved password of {old_name} to {new_name}: {e}"),
+        Err(e) => {
+            tracing::warn!("failed to move the saved password of {old_name} to {new_name}: {e}")
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::platform::test_config_lock;
 
     fn tempdir() -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!(
@@ -222,6 +233,14 @@ mod tests {
 
     #[test]
     fn login_password_roundtrip_and_delete() {
+        // Serialization, not isolation: a save followed immediately by its
+        // read hits the same real keychain entry from two test threads, and
+        // the Windows Credential Manager intermittently fails that read
+        // under load (~1/13 runs). `load_secret_any` softens a keychain
+        // error into a miss, so the read returned None instead of the
+        // password. Holding the config lock per test (the same lock
+        // `with_scratch` uses) spaces the calls out.
+        let _guard = test_config_lock();
         let dir = tempdir();
         let host = unique_host("rt");
         save_login_password(&dir, &host, "s3cr3t").unwrap();
@@ -233,6 +252,7 @@ mod tests {
 
     #[test]
     fn rename_moves_the_entry_and_leaves_no_orphan() {
+        let _guard = test_config_lock();
         let dir = tempdir();
         let old = unique_host("old");
         let new = unique_host("new");

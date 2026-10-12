@@ -89,7 +89,7 @@ fn migrate_in(dir: &Path, path: &Path) -> usize {
             }
         };
         let tmp = path.with_extension("toml.tmp");
-        let write = std::fs::write(&tmp, &text).and_then(|()| std::fs::rename(&tmp, &path));
+        let write = std::fs::write(&tmp, &text).and_then(|()| std::fs::rename(&tmp, path));
         if let Err(e) = write {
             // The passwords are already in the store, so this only costs a
             // retry of the (idempotent) cleanup pass.

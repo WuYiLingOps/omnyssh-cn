@@ -100,7 +100,9 @@ pub async fn save_host(
                 .map_err(CommandError::plain)
         })
         .await
-        .map_err(|e| CommandError::coded("taskFailed", format!("secret save task failed: {e}")))??;
+        .map_err(|e| {
+            CommandError::coded("taskFailed", format!("secret save task failed: {e}"))
+        })??;
     }
     // A pin the payload carries must point at an entry that exists, so a
     // deleted key or identity cannot leave hosts.toml with a dangling id
@@ -112,7 +114,9 @@ pub async fn save_host(
     {
         tauri::async_runtime::spawn_blocking(move || check_references(&key_ref, &identity_ref))
             .await
-            .map_err(|e| CommandError::coded("taskFailed", format!("reference check task failed: {e}")))??
+            .map_err(|e| {
+                CommandError::coded("taskFailed", format!("reference check task failed: {e}"))
+            })??
     }
     persist(move |hosts| upsert(hosts, input, imported)).await
 }

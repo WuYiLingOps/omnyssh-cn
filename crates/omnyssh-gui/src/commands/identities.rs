@@ -76,12 +76,7 @@ impl Snapshot {
 pub async fn list_key_entries() -> Result<Vec<KeyEntryDto>, CommandError> {
     tauri::async_runtime::spawn_blocking(|| {
         let snap = snapshot()?;
-        Ok(snap
-            .file
-            .keys
-            .iter()
-            .map(|k| snap.key_dto(k))
-            .collect())
+        Ok(snap.file.keys.iter().map(|k| snap.key_dto(k)).collect())
     })
     .await
     .map_err(|e| CommandError::coded("taskFailed", format!("identities list task failed: {e}")))?
@@ -123,8 +118,7 @@ pub async fn save_key_entry(
 pub async fn delete_key_entry(id: String) -> Result<(), CommandError> {
     tauri::async_runtime::spawn_blocking(move || {
         let hosts = load_hosts().unwrap_or_default();
-        identities::delete_key_entry(&id, &hosts)
-            .map_err(|n| Snapshot::in_use_err("keyInUse", n))
+        identities::delete_key_entry(&id, &hosts).map_err(|n| Snapshot::in_use_err("keyInUse", n))
     })
     .await
     .map_err(|e| CommandError::coded("taskFailed", format!("key entry delete task failed: {e}")))?

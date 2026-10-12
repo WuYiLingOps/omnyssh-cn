@@ -151,9 +151,7 @@ impl HostSyncDto {
 /// each device re-derives them from its own `~/.ssh/config`.
 #[tauri::command]
 #[specta::specta]
-pub async fn sync_export_hosts(
-    include_passwords: bool,
-) -> Result<Vec<HostSyncDto>, CommandError> {
+pub async fn sync_export_hosts(include_passwords: bool) -> Result<Vec<HostSyncDto>, CommandError> {
     tauri::async_runtime::spawn_blocking(move || {
         let hosts = load_hosts().map_err(|e| CommandError::plain(e.to_string()))?;
         Ok(hosts

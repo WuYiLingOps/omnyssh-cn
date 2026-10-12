@@ -149,19 +149,29 @@ fn others(prefer: SecretBackend) -> (SecretBackend, SecretBackend) {
 
 // ---------------------------------------------------------------------------
 // Keychain backend
+//
+// Only on non-musl targets: the `sync-secret-service` backend links libdbus,
+// which a static musl build cannot provide (no pkg-config module and the
+// crate's `vendored` feature needs a git submodule, so it does not build from
+// crates.io either). Musl builds (Termux etc.) run on the encrypted-file
+// backend alone — every call below reports failure, which `save_secret`'s
+// existing fallback turns into a file write, and reads tolerate as a miss.
 // ---------------------------------------------------------------------------
 
+#[cfg(not(target_env = "musl"))]
 fn keyring_entry(key_id: &str) -> Result<keyring::Entry, String> {
     keyring::Entry::new(KEYRING_SERVICE, key_id)
         .map_err(|e| format!("failed to create keychain entry: {e}"))
 }
 
+#[cfg(not(target_env = "musl"))]
 fn save_keyring(key_id: &str, secret: &str) -> Result<(), String> {
     keyring_entry(key_id)?
         .set_password(secret)
         .map_err(|e| format!("failed to write keychain entry: {e}"))
 }
 
+#[cfg(not(target_env = "musl"))]
 fn load_keyring(key_id: &str) -> Result<Option<String>, String> {
     match keyring_entry(key_id)?.get_password() {
         Ok(p) => Ok(Some(p)),
@@ -170,6 +180,7 @@ fn load_keyring(key_id: &str) -> Result<Option<String>, String> {
     }
 }
 
+#[cfg(not(target_env = "musl"))]
 fn delete_keyring(key_id: &str) -> Result<(), String> {
     match keyring_entry(key_id)?.delete_credential() {
         Ok(()) => Ok(()),
@@ -178,6 +189,21 @@ fn delete_keyring(key_id: &str) -> Result<(), String> {
         Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(format!("failed to delete keychain entry: {e}")),
     }
+}
+
+#[cfg(target_env = "musl")]
+fn save_keyring(_key_id: &str, _secret: &str) -> Result<(), String> {
+    Err("no system keychain in static musl builds".to_string())
+}
+
+#[cfg(target_env = "musl")]
+fn load_keyring(_key_id: &str) -> Result<Option<String>, String> {
+    Err("no system keychain in static musl builds".to_string())
+}
+
+#[cfg(target_env = "musl")]
+fn delete_keyring(_key_id: &str) -> Result<(), String> {
+    Err("no system keychain in static musl builds".to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -232,8 +258,7 @@ fn save_vault(dir: &Path, vault: &VaultFile) -> Result<(), String> {
         .map_err(|e| format!("failed to serialize the secret vault: {e}"))?;
     let tmp = path.with_extension("bin.tmp");
     std::fs::write(&tmp, text).map_err(|e| format!("failed to write the secret vault: {e}"))?;
-    std::fs::rename(&tmp, &path)
-        .map_err(|e| format!("failed to save the secret vault: {e}"))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("failed to save the secret vault: {e}"))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -262,13 +287,11 @@ fn decrypt(nonce_b64: &str, cipher_b64: &str) -> Result<String, String> {
     let ct = B64
         .decode(cipher_b64)
         .map_err(|e| format!("failed to decode the ciphertext: {e}"))?;
-    let pt = cipher
-        .decrypt(nonce, ct.as_ref())
-        .map_err(|_| {
-            "decryption failed: the secret vault may come from another machine or OS install, \
+    let pt = cipher.decrypt(nonce, ct.as_ref()).map_err(|_| {
+        "decryption failed: the secret vault may come from another machine or OS install, \
              re-enter the password"
-                .to_string()
-        })?;
+            .to_string()
+    })?;
     String::from_utf8(pt).map_err(|e| format!("decrypted value is not valid UTF-8: {e}"))
 }
 
@@ -394,7 +417,10 @@ mod tests {
         vault.entries.get_mut(&key).unwrap().cipher = B64.encode(b"tampered-data!!");
         save_vault(&dir, &vault).unwrap();
         let err = load_file(&dir, &key).unwrap_err();
-        assert!(err.contains("decryption failed"), "must report, not panic: {err}");
+        assert!(
+            err.contains("decryption failed"),
+            "must report, not panic: {err}"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 

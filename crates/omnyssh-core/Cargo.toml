@@ -40,13 +40,17 @@ dirs = { workspace = true }
 
 # Secret store: login passwords live in the system keychain (keyring) with a
 # machine-bound AES-256-GCM encrypted-file fallback for headless environments.
-keyring = { workspace = true }
+# The keychain needs libdbus (the `sync-secret-service` feature), which a
+# static musl build cannot link — musl targets run on the file backend alone.
 machine-uid = { workspace = true }
 aes-gcm = { workspace = true }
 base64 = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
 getrandom = { workspace = true }
+
+[target.'cfg(not(target_env = "musl"))'.dependencies]
+keyring = { workspace = true }
 
 # glob(7) patterns in ssh_config `Include` directives
 glob = "0.3"

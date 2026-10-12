@@ -363,7 +363,10 @@ mod tests {
         // migration owns the cleanup), a written one stays clean.
         let mut h = host("a", HostSource::Manual);
         h.password = Some("secret".to_string());
-        let toml_str = toml::to_string_pretty(&HostsFile { hosts: vec![h.clone()] }).unwrap();
+        let toml_str = toml::to_string_pretty(&HostsFile {
+            hosts: vec![h.clone()],
+        })
+        .unwrap();
         assert!(!toml_str.contains("secret"), "{toml_str}");
         let parsed: HostsFile = toml::from_str(&toml_str).unwrap();
         assert!(parsed.hosts[0].password.is_none());

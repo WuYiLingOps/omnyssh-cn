@@ -142,9 +142,7 @@ pub fn answer(request_id: u64, answer: Option<PromptAnswer>) -> Result<(), Passw
         .pending
         .remove(&request_id)
         .ok_or(PasswordError::NotRequested)?;
-    reply
-        .send(answer)
-        .map_err(|_| PasswordError::NotRequested)
+    reply.send(answer).map_err(|_| PasswordError::NotRequested)
 }
 
 /// What a password prompt shows.

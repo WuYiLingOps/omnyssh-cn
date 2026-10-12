@@ -235,7 +235,9 @@ async fn probe_shell_cwd(handle: &SshConnection) -> Option<String> {
             }
         }
     };
-    tokio::time::timeout(CWD_PROBE_TIMEOUT, collect).await.ok()?;
+    tokio::time::timeout(CWD_PROBE_TIMEOUT, collect)
+        .await
+        .ok()?;
     parse_cwd_output(&out)
 }
 

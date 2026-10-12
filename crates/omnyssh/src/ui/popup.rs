@@ -1113,10 +1113,7 @@ fn render_secret_prompt(frame: &mut Frame, theme: &Theme, prompt: SecretPrompt<'
                     t(lang, Key::PopupRememberPassword),
                     Style::default().fg(theme.text_secondary),
                 ),
-                Span::styled(
-                    " (Ctrl+R)",
-                    Style::default().fg(theme.text_muted),
-                ),
+                Span::styled(" (Ctrl+R)", Style::default().fg(theme.text_muted)),
             ])),
             rows[4],
         );

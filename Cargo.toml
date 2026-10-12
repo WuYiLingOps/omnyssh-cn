@@ -23,7 +23,10 @@ tracing = "0.1"
 dirs = "5"
 chrono = "0.4"
 
-# Secret store (core::secrets): system keychain with an encrypted-file fallback
+# Secret store (core::secrets): system keychain with an encrypted-file fallback.
+# `sync-secret-service` needs libdbus at link time, which a static musl build
+# cannot provide (no pkg-config module, no vendored crate) — musl targets are
+# excluded there via `cfg` in omnyssh-core and run on the file backend.
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 machine-uid = "0.5"
 aes-gcm = "0.10"
