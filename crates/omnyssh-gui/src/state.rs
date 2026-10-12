@@ -396,6 +396,25 @@ impl GuiState {
         });
     }
 
+    /// Probe the interactive shell's working directory behind a terminal tab, so
+    /// transfer dialogs can default to where the user actually is. The probe runs
+    /// inside the session task on the tab's own SSH connection; locks are dropped
+    /// before the await (std mutexes must not be held across it). Returns `None`
+    /// for unknown/closed ids or when the remote cannot answer.
+    pub async fn probe_terminal_cwd(&self, public: SessionId) -> Option<String> {
+        let inner = self
+            .sessions
+            .lock()
+            .expect("sessions lock poisoned")
+            .pty_inner(public)?;
+        let rx = self
+            .pty
+            .lock()
+            .expect("pty lock poisoned")
+            .probe_cwd(inner)?;
+        rx.await.ok().flatten()
+    }
+
     /// User-initiated close: tear down the core session and drop its routing state,
     /// so the task's later `PtyExited` finds no mapping and emits no `terminal-exited`
     /// (the frontend already tore the tab down, §3.4).

@@ -55,6 +55,19 @@ pub fn terminal_resize(
     Ok(())
 }
 
+/// Probe the interactive shell's current directory for `session_id`, so the
+/// upload/download dialogs can prefill where the user actually is. Linux hosts
+/// answer via a `/proc` scan on the tab's own SSH connection; elsewhere (and on
+/// any failure) this resolves to `None` and the UI keeps its fallback default.
+#[tauri::command]
+#[specta::specta]
+pub async fn terminal_probe_cwd(
+    state: State<'_, GuiState>,
+    session_id: u64,
+) -> Result<Option<String>, CommandError> {
+    Ok(state.probe_terminal_cwd(session_id).await)
+}
+
 /// Close a terminal and its connection (tech-gui.md §4.2). The frontend has already
 /// dropped the tab, so the resulting `PtyExited` emits no `terminal-exited` (§3.4).
 #[tauri::command]
