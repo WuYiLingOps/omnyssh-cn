@@ -1,59 +1,73 @@
 <div align="center">
 
-# OmnySSH
+# OmnySSH 简体中文版
 
-### 你管理的每一台服务器，都在一个窗口里。仪表盘、终端、SFTP、命令片段。
+### 现代化 TUI / GUI SSH 服务器管理工具 —— 仪表盘、终端、SFTP、命令片段全集成
 
 <img src="assets/gui.webp" alt="OmnySSH GUI dashboard" width="900">
 
-[![Downloads](https://img.shields.io/github/downloads/timhartmann7/omnyssh/total?label=total%20installs&color=2ea44f)](https://github.com/timhartmann7/omnyssh/releases)
-[![Latest release](https://img.shields.io/github/v/release/timhartmann7/omnyssh?label=latest)](https://github.com/timhartmann7/omnyssh/releases/latest)
-[![Stars](https://img.shields.io/github/stars/timhartmann7/omnyssh?style=flat)](https://github.com/timhartmann7/omnyssh/stargazers)
+[![Downloads](https://img.shields.io/github/downloads/WuYiLingOps/omnyssh/total?label=total%20installs&color=2ea44f)](https://github.com/WuYiLingOps/omnyssh/releases)
+[![Latest release](https://img.shields.io/github/v/release/WuYiLingOps/omnyssh?label=latest)](https://github.com/WuYiLingOps/omnyssh/releases/latest)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Build](https://img.shields.io/github/actions/workflow/status/timhartmann7/omnyssh/ci.yml?branch=main)](https://github.com/timhartmann7/omnyssh/actions)
+[![Build](https://img.shields.io/github/actions/workflow/status/WuYiLingOps/omnyssh/ci.yml?branch=main)](https://github.com/WuYiLingOps/omnyssh/actions)
 
-**[安装](#安装)** •
-**[国内加速下载](#国内加速下载)** •
-**[功能](#它能做什么)** •
+**[项目简介](#项目简介)** •
+**[功能特性](#主要功能特性)** •
+**[安装](#安装与使用)** •
+**[国内加速](#国内加速下载)** •
 **[SSH 密钥](#ssh-密钥配置)** •
 **[对比](#对比)** •
 **[TUI 版本](#tui-版本)** •
-**[常见问题](#常见问题)**
+**[常见问题](#常见问题)** •
+**[致谢](#致敬原作者与开源协议)**
 
 </div>
 
 ---
 
-## 为什么是 OmnySSH
+## 项目简介
 
-一款为中文用户完整本地化的开源 SSH 客户端：
+**OmnySSH 简体中文版**是基于官方上游 [timhartmann7/omnyssh](https://github.com/timhartmann7/omnyssh) 深度定制的中文本地化分支。
 
-- **简体中文界面**：桌面版和终端版的每个界面、对话框、错误信息都已翻译，设置里一键切换，无需任何插件。
+本项目引入了轻量级、无侵入的**多语言国际化（i18n）架构**，为桌面版和终端版的每个界面、对话框和错误信息提供全套简体中文（zh-Hans）翻译，在设置中一键切换语言，无需任何插件。
+
+同时保留了上游项目的全部优点：
+
 - **免费开源**：Apache 2.0 协议，代码全部公开，没有高级版、没有订阅。
 - **无需账号**：不注册、不登录、不上传任何数据，零遥测。
 - **轻量**：多会话同时打开约 130 MB 内存，下载体积仅 20 MB，4 个进程。
 - **全平台**：macOS（Apple Silicon / Intel）、Windows、Linux，TUI 版还支持 Termux（安卓手机直接当运维终端用）。
 
-## 安装
+## 主要功能特性
 
-在 macOS 和 Linux 上只需一条命令：
+服务器只需添加一次。之后它就以卡片的形式出现在仪表盘上，实时显示 CPU、内存和磁盘用量、运行时长、发行版、占用 CPU 最高的进程，以及一枚标明其用途的徽章。点一下 `sh` 就进入真正的 PTY 终端；点一下 `files` 就打开双栏 SFTP 浏览器。十台服务器也能一屏放下，并且自动刷新。管一堆国内云厂商（阿里云、腾讯云、华为云等）的 ECS/CVM/轻量服务器，和管任何 Linux 主机没有任何区别——标准 SSH 协议，直连即可。
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/timhartmann7/omnyssh/main/install.sh | sh
-```
+- **实时服务器仪表盘**：单窗口统一监控多台 VPS/服务器，直观展示 CPU、内存、磁盘使用率进度条、运行时长、操作系统及 Docker 等服务运行状态，超载时进度条由黄变红；支持按标签分组、排序，桌面版可拖拽卡片自定义布局。
+- **内置多标签终端 (PTY)**：基于 xterm 的高性能全功能终端，支持分屏会话与后台无缝切换，Vim、htop、systemctl 等交互程序正常使用。
+- **双栏式 SFTP 文件传输**：左侧本地、右侧远程，支持批量上传、下载、新建目录、重命名与拖拽传输，可从文件管理器直接拖到服务器，告别繁琐的 `scp` 命令。
+- **命令片段与多机广播**：保存高频运维命令，支持动态参数插值（如 `sudo systemctl restart {{service}}`），一键向选中的多台服务器并发广播执行，批量重启几十台机器上的同一个服务一次搞定。
+- **自动化 SSH 密钥免密配置**：一键生成 Ed25519 密钥、分发公钥、验证连接并安全禁用密码认证，全程自动回滚保障服务器安全。
+- **⌘K 全局快速命令面板**：键盘驱动，快速搜索与切换主机和活动会话。
+- **主播/隐私模式 (Streamer Mode)**：一键对界面中所有敏感主机名与 IP 地址脱敏，适合录屏与直播演示。
+- **亮色与暗色主题**：两款应用都内置，从侧边栏即可切换。
+- **多语言随时切换**：在“设置 (Settings)”中自由切换 **简体中文** 与 **English**，选择保存在共享配置中，TUI 与桌面版互相跟随，重启后依然生效。
 
-脚本会自动检测你的操作系统和架构，并安装最新的桌面版——macOS 上装到 `/Applications`，Linux 上加入应用菜单。想要终端版，还是两个都要？`curl … | sh -s -- --tui`（或 `--both`）。也可以直接从 [**Releases**](https://github.com/timhartmann7/omnyssh/releases/latest) 下载你平台对应的文件。
+## 安装与使用
 
-| 平台 | 文件 |
-|------|------|
-| macOS Apple Silicon | `OmnySSH-aarch64-apple-darwin.dmg` |
-| macOS Intel | `OmnySSH-x86_64-apple-darwin.dmg` |
-| Linux x86_64 | `OmnySSH-x86_64.AppImage` / `.deb` / `.rpm` |
-| Windows x86_64 | `OmnySSH-x86_64-setup.exe` |
+### GUI 桌面客户端
 
-无需账号，没有登录页，零遥测。应用打开时就是一个空仪表盘，如果你已有 `~/.ssh/config`，它会自动读取——包括经由堡垒机（`ProxyJump`）连接的主机。Windows 用户常见的 Xshell、FinalShell 里保存的会话，按主机逐条加进来即可，数据不会离开你的电脑。
+前往 [**Releases 发行版页面**](https://github.com/WuYiLingOps/omnyssh/releases) 下载对应平台的安装包：
 
-## 国内加速下载
+| 操作系统平台 | 文件格式 | 说明 |
+|---|---|---|
+| **Windows x86_64** | `OmnySSH-x86_64-setup.exe` / `.zip` | 适用于 64 位 Windows 系统（安装版 / 便携版） |
+| **macOS (Apple Silicon)** | `OmnySSH-aarch64-apple-darwin.dmg` | 适用于 M1/M2/M3/M4 系列芯片 |
+| **macOS (Intel)** | `OmnySSH-x86_64-apple-darwin.dmg` | 适用于 Intel 处理器 Mac |
+| **Linux x86_64** | `OmnySSH-x86_64.AppImage` / `.deb` / `.rpm` | 通用 Linux 发行版 |
+
+> **无账号、无遥测、无数据上传**：应用本地运行，自动读取你的 `~/.ssh/config` 配置（包括经由堡垒机 `ProxyJump` 连接的主机），隐私安全。Windows 用户在 Xshell、FinalShell 里保存的会话，按主机逐条加进来即可，数据不会离开你的电脑。
+
+### 国内加速下载
 
 如果你的网络访问 GitHub 较慢，以下方式可选（均为社区通行做法，请自行判断可信度）：
 
@@ -71,34 +85,6 @@ curl -fsSL https://raw.githubusercontent.com/timhartmann7/omnyssh/main/install.s
   ```
 
 - **应用内更新**：OmnySSH 本身不联网上报任何数据，检查更新同样只访问 GitHub Releases，走系统代理即可。
-
-## 它能做什么
-
-服务器只需添加一次。之后它就以卡片的形式出现在仪表盘上，实时显示 CPU、内存和磁盘用量、运行时长、发行版、占用 CPU 最高的进程，以及一枚标明其用途的徽章。点一下 `sh` 就进入真正的 PTY 终端；点一下 `files` 就打开双栏 SFTP 浏览器。十台服务器也能一屏放下，并且自动刷新。
-
-### 实时仪表盘
-每台主机一张卡片，包含 CPU、内存和磁盘进度条、运行时长、操作系统版本、占用资源最高的进程，以及显示在线容器数量的 Docker 徽章。进度条会从黄变红，一眼就能看出哪台服务器不对劲。可以按标签分组、排序，桌面版里还能拖拽卡片排成你自己的顺序。管一堆国内云厂商（阿里云、腾讯云、华为云等）的 ECS/CVM/轻量服务器，和管任何 Linux 主机没有任何区别——标准 SSH 协议，直连即可。
-
-### 真正的终端
-以标签页形式提供完整的 PTY 会话。想开多少台服务器就开多少台，从侧边栏随意切换，它们会在你浏览仪表盘时继续运行。Vim、htop、systemctl 等交互程序都能正常使用。
-
-### 双栏 SFTP
-左边本地，右边远程。勾选想传输的文件和文件夹后一键移动，或者直接从一侧拖到另一侧，甚至可以从你的文件管理器直接拖到服务器上。有进度条可看，支持批量选择，还能看到每个文件的最后修改时间。改个 Nginx 配置、传个 jar 包，不用再记 `scp -r` 的语法。
-
-### 命令片段
-把每周都要粘贴的命令存下来。选中一个片段，勾选要执行的主机，它就会在所有主机上同时运行。片段还支持参数，比如 `sudo systemctl restart {{service}}` 会询问你服务名。批量重启几十台机器上的同一个服务，一次搞定。
-
-### 全局搜索
-按下 ⌘K 开始输入。你的所有主机，加上所有已打开的会话，都能搜到。回车即进入所选主机的终端，或回到你上次离开的会话。
-
-### 主播模式
-把屏幕上的所有真实 IP 换成假 IP。录演示视频、直播运维或共享屏幕时，不会泄露客户的公网 IP 和服务器信息。
-
-### 亮色与暗色主题
-两款应用都内置。从侧边栏即可切换。
-
-### 英文与简体中文
-两款应用的每个界面、对话框和错误信息都有简体中文翻译。在设置的主题旁边选择语言，或用 `--lang zh-Hans` 启动终端版。选择会保存到共享配置中，TUI 和桌面版会互相跟随，重启后依然生效。
 
 ## SSH 密钥配置
 
@@ -140,25 +126,24 @@ OmnySSH 起源于终端，TUI 版本至今仍在维护，仍在发版。习惯�
 
 底层是同一个引擎：本仓库是一个 cargo workspace，`crates/omnyssh-core` 承载核心逻辑，各前端构建于其上。仪表盘、SFTP、命令片段、多会话标签、模糊搜索，外加四套主题（`default`、`dracula`、`nord`、`gruvbox`）以及可在 `config.toml` 中重新映射的快捷键。界面提供英文和简体中文——在设置中选择，或用 `--lang zh-Hans` 启动。
 
-[![Crates.io](https://img.shields.io/crates/v/omnyssh.svg)](https://crates.io/crates/omnyssh)
-[![Crates downloads](https://img.shields.io/crates/d/omnyssh.svg)](https://crates.io/crates/omnyssh)
+从 [Releases](https://github.com/WuYiLingOps/omnyssh/releases) 下载预编译的 TUI 二进制文件（文件名以 `omny-*` 开头，覆盖 Linux、macOS、Windows 和 Termux），或直接用 cargo 从本仓库安装：
 
 ```bash
-# cargo（国内建议先配置 rsproxy 镜像，见上文）
-cargo install omnyssh
-
-# homebrew
-brew install timhartmann7/tap/omnyssh
-
-# nix
-nix run github:timhartmann7/omnyssh
+cargo install --git https://github.com/WuYiLingOps/omnyssh omnyssh --locked
 ```
 
 然后运行 `omny`。按 `a` 添加主机，`/` 搜索，`g` 按标签分组，`?` 查看帮助，`Shift+K` 为选中的主机配置密钥。
 
-Linux、macOS、Windows 和 Termux 的预编译 TUI 二进制文件在 [Releases](https://github.com/timhartmann7/omnyssh/releases) 页面，文件名以 `omny-*` 开头。配置位于：Linux 的 `~/.config/omnyssh/`、macOS 的 `~/Library/Application Support/omnyssh/`、Windows 的 `%APPDATA%\omnyssh\`。启动时会读取你的 `~/.ssh/config`，但绝不写入。
+配置位于：Linux 的 `~/.config/omnyssh/`、macOS 的 `~/Library/Application Support/omnyssh/`、Windows 的 `%APPDATA%\omnyssh\`。启动时会读取你的 `~/.ssh/config`，但绝不写入。
 
 全部选项、快捷键和配置示例见 `man omny`。
+
+## 跟随上游更新
+
+本项目持续跟踪官方上游 [timhartmann7/omnyssh](https://github.com/timhartmann7/omnyssh) 的更新，上游新特性会及时合入并完成汉化：
+
+1. **上游特性全保留**：仪表盘、SFTP、命令片段、密钥配置等核心功能与上游保持同步演进。
+2. **语言包彻底隔离**：桌面版翻译字典独立存放在 `crates/omnyssh-gui/ui/src/lib/i18n/locales/`（`zh-Hans.json` / `en.json`），TUI 词典位于 `crates/omnyssh-core/src/i18n.rs`，与核心业务代码分离，合并上游时冲突率极低。
 
 ## 常见问题
 
@@ -168,11 +153,11 @@ Linux、macOS、Windows 和 Termux 的预编译 TUI 二进制文件在 [Releases
 
 **国内服务器连不上，是不是网络被限制了？** OmnySSH 走的是标准 SSH（默认 22 端口）。连不上时先检查：云厂商安全组/防火墙有没有放行端口、控制台里的密钥对是不是和你本地的对不上、`/etc/hosts.deny` 和 `fail2ban` 有没有把你的 IP 拦了。OmnySSH 本身不做任何中转，流量直连你的服务器。
 
-## 开发动态
+## 致敬原作者与开源协议
 
-作者在 Telegram 上记录正在构建的东西：发版说明、进行中的截图、性能测试，以及过程中踩过的坑。通常比其他任何地方都早。（Telegram 需要相应的网络环境才能访问。）
-
-### 👉 [**t.me/timhartmanndev**](https://t.me/timhartmanndev)
+- **官方上游仓库**：[timhartmann7/omnyssh](https://github.com/timhartmann7/omnyssh)
+- **开源协议**：[Apache License 2.0](LICENSE)
+- 感谢原作者 **Tim Hartmann**（[@timhartmann7](https://github.com/timhartmann7)）打造的开源工具。
 
 ## 参与贡献
 
@@ -181,9 +166,9 @@ Linux、macOS、Windows 和 Termux 的预编译 TUI 二进制文件在 [Releases
 Workspace 结构：
 
 ```
-crates/omnyssh-core   核心引擎，与前端无关
+crates/omnyssh-core   核心引擎，与前端无关（含 i18n 词典）
 crates/omnyssh        TUI 应用（二进制名：omny）
-crates/omnyssh-gui    Tauri 桌面应用
+crates/omnyssh-gui    Tauri 桌面应用（含 i18n 语言包）
 ```
 
 ## 许可证
@@ -194,8 +179,8 @@ Apache 2.0，详见 [LICENSE](LICENSE)。
 
 ### 如果 OmnySSH 帮你省下了一个终端标签页，就给仓库点个 ⭐ 吧
 
-[报告 Bug](https://github.com/timhartmann7/omnyssh/issues) •
-[功能建议](https://github.com/timhartmann7/omnyssh/issues) •
-[讨论区](https://github.com/timhartmann7/omnyssh/discussions)
+[报告 Bug](https://github.com/WuYiLingOps/omnyssh/issues) •
+[功能建议](https://github.com/WuYiLingOps/omnyssh/issues) •
+[官方项目原址](https://github.com/timhartmann7/omnyssh)
 
 </div>
