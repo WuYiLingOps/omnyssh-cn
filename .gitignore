@@ -3,6 +3,8 @@
 demo.tape
 .DS_Store
 .workbuddy
+doc/
+.env
 
 # Local symlink created by `nix build`.
 /result
