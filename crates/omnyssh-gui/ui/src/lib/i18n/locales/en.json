@@ -44,10 +44,15 @@
     "commands": "Commands",
     "toggleStreamer": "Toggle streamer mode",
     "hintNavigate": "↑↓ navigate",
+    "hintFold": "←→ fold",
     "hintSelect": "↵ select",
     "hintClose": "esc close",
     "dismiss": "Dismiss",
-    "commandToggleStreamer": "Toggle streamer mode"
+    "commandToggleStreamer": "Toggle streamer mode",
+    "tagAll": "All",
+    "untagged": "Untagged",
+    "tagFilter": "Filter by tag",
+    "toggleGroup": "Fold or unfold this group"
   },
   "dashboard": {
     "title": "Dashboard",

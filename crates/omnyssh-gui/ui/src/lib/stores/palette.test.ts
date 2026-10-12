@@ -2,7 +2,18 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { get } from 'svelte/store';
 import type { ConnectionStatusDto, HostDto } from '$lib/bindings';
 import type { Session } from './sessions';
-import { palette, paletteItems, paletteSignature, nextIndex, hostStatusDot } from './palette';
+import {
+  palette,
+  paletteItems,
+  paletteSignature,
+  nextIndex,
+  hostStatusDot,
+  groupHostsByTag,
+  filterByTag,
+  tagChips,
+  visibleGroups,
+  queryHosts
+} from './palette';
 
 // The palette filters a command by its *translated* label, so the tests pass a stub that
 // maps the one command key to the English text they search for.
@@ -119,6 +130,80 @@ describe('paletteSignature — stable across volatile updates', () => {
     const hostOnly = paletteItems('navigate', [host('web-1')], [], 'web', translate);
     expect(paletteSignature(all)).toBe(`h:web-1\u0000c:toggle-streamer`);
     expect(paletteSignature(hostOnly)).toBe('h:web-1');
+  });
+});
+
+describe('tag-organized picker — groups, chips, folding', () => {
+  const tagged = [
+    host('web-1', { tags: ['prod', 'web'] }),
+    host('web-2', { tags: ['prod'] }),
+    host('db-1', { tags: [' db '] }), // blank-padded tags still count, trimmed
+    host('cache-1', { tags: ['prod', 'db'] }),
+    host('bare-1'),
+    host('bare-2', { tags: [' ', ''] }) // blank-only tags are untagged
+  ];
+
+  it('groups hosts under their first non-blank tag, Untagged last, name-sorted', () => {
+    expect(groupHostsByTag(tagged).map((g) => [g.tag, g.hosts.map((h) => h.name)])).toEqual([
+      ['db', ['db-1']],
+      ['prod', ['web-1', 'web-2', 'cache-1']],
+      [null, ['bare-1', 'bare-2']]
+    ]);
+  });
+
+  it('keeps the input order inside a section', () => {
+    const two = [host('b', { tags: ['x'] }), host('a', { tags: ['x'] })];
+    expect(groupHostsByTag(two)[0].hosts.map((h) => h.name)).toEqual(['b', 'a']);
+  });
+
+  it('a tag chip keeps hosts carrying the tag anywhere, untagged keeps the bare ones', () => {
+    expect(filterByTag(tagged, 'db').map((h) => h.name)).toEqual(['db-1', 'cache-1']);
+    expect(filterByTag(tagged, 'web').map((h) => h.name)).toEqual(['web-1']);
+    expect(filterByTag(tagged, null).map((h) => h.name)).toEqual(['bare-1', 'bare-2']);
+    expect(filterByTag(tagged, undefined)).toHaveLength(6);
+  });
+
+  it('chips count every tag a host carries; untagged trails only when present', () => {
+    expect(tagChips(tagged)).toEqual([
+      { kind: 'all', count: 6 },
+      { kind: 'tag', tag: 'db', count: 2 },
+      { kind: 'tag', tag: 'prod', count: 3 },
+      { kind: 'tag', tag: 'web', count: 1 },
+      { kind: 'untagged', count: 2 }
+    ]);
+    expect(tagChips([host('solo')])).toEqual([
+      { kind: 'all', count: 1 },
+      { kind: 'untagged', count: 1 }
+    ]);
+    expect(tagChips([])).toEqual([{ kind: 'all', count: 0 }]);
+  });
+
+  it('visibleGroups empties the folded sections but keeps their headers', () => {
+    const groups = groupHostsByTag(tagged);
+    const shown = visibleGroups(groups, ['prod', ''], false);
+    expect(shown.map((g) => [g.tag, g.hosts.length])).toEqual([
+      ['db', 1],
+      ['prod', 0],
+      [null, 0]
+    ]);
+  });
+
+  it('a search unfolds every group', () => {
+    const groups = groupHostsByTag(tagged);
+    expect(visibleGroups(groups, ['prod', ''], true)).toEqual(groups);
+  });
+
+  it('the composed list equals the flat palette rows for the same inputs', () => {
+    const query = 'web';
+    // Nothing folded: folding only removes rows, it never changes what matches.
+    const grouped = visibleGroups(
+      groupHostsByTag(filterByTag(queryHosts(tagged, query), 'prod')),
+      [],
+      false
+    );
+    const groupedRows = grouped.flatMap((g) => g.hosts);
+    const flat = paletteItems('pickHost', tagged, [], query, translate);
+    expect(groupedRows).toEqual(flat.map((i) => (i.kind === 'host' ? i.host : null)).filter(Boolean));
   });
 });
 

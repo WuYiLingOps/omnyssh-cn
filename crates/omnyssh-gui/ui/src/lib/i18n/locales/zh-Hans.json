@@ -44,10 +44,15 @@
     "commands": "命令",
     "toggleStreamer": "切换推流模式",
     "hintNavigate": "↑↓ 移动",
+    "hintFold": "←→ 折叠",
     "hintSelect": "↵ 选择",
     "hintClose": "esc 关闭",
     "dismiss": "关闭",
-    "commandToggleStreamer": "切换推流模式"
+    "commandToggleStreamer": "切换推流模式",
+    "tagAll": "全部",
+    "untagged": "未打标签",
+    "tagFilter": "按标签筛选",
+    "toggleGroup": "折叠或展开该分组"
   },
   "dashboard": {
     "title": "仪表盘",
