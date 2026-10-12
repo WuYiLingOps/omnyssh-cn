@@ -35,6 +35,7 @@ use commands::terminal::{
     terminal_close, terminal_open, terminal_paste, terminal_probe_cwd, terminal_resize,
     terminal_write,
 };
+use commands::testconn::test_host_connection;
 use commands::tray::set_tray_behavior;
 use commands::tunnels::{tunnel_start, tunnel_stop};
 use commands::update::{check_update, install_update, load_update_config, save_update_config};
@@ -115,6 +116,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             reload_hosts,
             save_host,
             delete_host,
+            test_host_connection,
             set_host_secret,
             host_secret_backend,
             list_key_entries,

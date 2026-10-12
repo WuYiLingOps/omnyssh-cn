@@ -14,6 +14,7 @@ import type {
   SnippetDto,
   TerminalBytes,
   TraySupportDto,
+  TestConnectionResultDto,
   UpdateConfigDto,
   UpdateInfoDto
 } from '$lib/bindings';
@@ -46,6 +47,15 @@ export async function saveHost(input: HostInputDto): Promise<void> {
 export async function deleteHost(name: string): Promise<void> {
   const res = await commands.deleteHost(name);
   if (res.status === 'error') throw fail(res.error);
+}
+
+/** Dial the form's current values and authenticate, without persisting anything.
+ *  Never rejects for a connect failure — that is the *result* — only for an IPC
+ *  fault (malformed payload, rejected forward rule). */
+export async function testHostConnection(input: HostInputDto): Promise<TestConnectionResultDto> {
+  const res = await commands.testHostConnection(input);
+  if (res.status === 'error') throw fail(res.error);
+  return res.data;
 }
 
 /** Read the saved snippets from the shared `snippets.toml`. */

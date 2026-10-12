@@ -9,6 +9,7 @@ pub mod sftp;
 pub mod secrets;
 pub mod snippets;
 pub mod terminal;
+pub mod testconn;
 pub mod tray;
 pub mod tunnels;
 pub mod update;

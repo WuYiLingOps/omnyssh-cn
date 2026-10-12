@@ -132,8 +132,53 @@ describe('formFromHost', () => {
       localForwards: [],
       tunnelAutostart: false,
       forwardAgent: false,
-      monitorPort: undefined
+      monitorPort: undefined,
+      keyId: '',
+      identityId: ''
     });
+  });
+});
+
+describe('credential pinning — the single picker value', () => {
+  it('defaults to none and sends no pins', () => {
+    const r = formToInput(fields({ name: 'n', hostname: 'h' }));
+    expect(r.ok && r.input.keyId).toBe('');
+    expect(r.ok && r.input.identityId).toBe('');
+  });
+
+  it("pins a keychain key from 'key:<id>'", () => {
+    const r = formToInput(fields({ name: 'n', hostname: 'h', credential: 'key:k-1' }));
+    expect(r.ok && r.input.keyId).toBe('k-1');
+    expect(r.ok && r.input.identityId).toBe('');
+  });
+
+  it("pins a login identity from 'identity:<id>'", () => {
+    const r = formToInput(fields({ name: 'n', hostname: 'h', credential: 'identity:i-1' }));
+    expect(r.ok && r.input.identityId).toBe('i-1');
+    expect(r.ok && r.input.keyId).toBe('');
+  });
+
+  it("sending 'none' on edit clears an existing pin (a definite '')", () => {
+    const original = host({ name: 'db', hostname: 'h', keyId: 'k-1', identityId: '' });
+    const f = formFromHost(original);
+    expect(f.credential).toBe('key:k-1');
+    f.credential = 'none';
+    const r = formToInput(f);
+    expect(r.ok && r.input.keyId).toBe('');
+    expect(r.ok && r.input.identityId).toBe('');
+  });
+
+  it('seeds the picker from the host pins, identity winning on legacy data', () => {
+    expect(formFromHost(host({ keyId: 'k-1', identityId: '' })).credential).toBe('key:k-1');
+    expect(formFromHost(host({ keyId: '', identityId: 'i-1' })).credential).toBe('identity:i-1');
+    // Both set: the identity takes over the login at connect time, so it shows.
+    expect(formFromHost(host({ keyId: 'k-1', identityId: 'i-1' })).credential).toBe('identity:i-1');
+  });
+
+  it('round-trips a pinned identity back through formToInput', () => {
+    const r = formToInput(formFromHost(host({ name: 'db', hostname: 'h', identityId: 'i-9' })));
+    expect(r.ok && r.input.identityId).toBe('i-9');
+    expect(r.ok && r.input.keyId).toBe('');
   });
 });
 

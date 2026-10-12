@@ -788,8 +788,9 @@ async fn connect_chain(
 ///
 /// Callers that wrap the connect in a timeout of their own must scale it by
 /// this — a fixed budget trips on a bastion chain before the connection has had
-/// the time [`connect_and_auth`] is entitled to.
-pub(crate) async fn connect_budget(host: &Host) -> Duration {
+/// the time [`connect_and_auth`] is entitled to. Public because the desktop GUI
+/// wraps a *form* connect (test-connection) in the same scaled budget.
+pub async fn connect_budget(host: &Host) -> Duration {
     // A chain that fails to resolve costs nothing to connect; the caller's own
     // attempt reports why.
     let hops = jump_chain(host).await.map_or(0, |chain| chain.len());

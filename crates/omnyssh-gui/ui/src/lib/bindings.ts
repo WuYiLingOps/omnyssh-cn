@@ -67,6 +67,19 @@ async deleteHost(name: string) : Promise<Result<null, CommandError>> {
 }
 },
 /**
+ * Dial `input` exactly as a save would build the host, authenticate, and close.
+ * Nothing is persisted and no password is stored; a payload password is carried
+ * in memory on the temporary `Host` for this attempt only.
+ */
+async testHostConnection(input: HostInputDto) : Promise<Result<TestConnectionResultDto, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("test_host_connection", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Saves (`Some`) or clears (`None`) the login password of `host_name`.
  * Returns where the secret now lives (`"keyring"` / `"file"`) or `None`
  * after a clear. Clearing is best effort: an absent entry is success, a real
@@ -746,6 +759,13 @@ async syncExportHosts(includePasswords: boolean) : Promise<Result<HostSyncDto[],
  * password untouched — the default (passwords excluded) payload can thus
  * never wipe a device's saved credentials.
  * 
+ * Orphan cleanup: hosts present before the apply but absent from the merged
+ * payload were deleted on another device, so their stored login passwords are
+ * removed too (best effort) — mirroring the UI's `delete_host` path and
+ * DockPilot's `cleanup_removed`; without this the secret store would
+ * accumulate credentials for hosts that no longer exist anywhere. Runs only
+ * after `save_hosts` succeeded, so a failed write never costs a password.
+ * 
  * The frontend calls `reload_hosts` afterwards to refresh the merged cache,
  * restart the pollers and broadcast `hosts-loaded`.
  */
@@ -1138,6 +1158,23 @@ export type TerminalBytes = number[]
  * emit this.
  */
 export type TerminalExited = { sessionId: number; hadOutput: boolean }
+/**
+ * What a connection test reported, back to the form.
+ */
+export type TestConnectionResultDto = { 
+/**
+ * The dial + authentication succeeded; the session was closed again.
+ */
+ok: boolean; 
+/**
+ * Round-trip of the successful dial + auth, in milliseconds. `None` on
+ * failure (mirrors DockPilot's `ConnectionTestResult`).
+ */
+latency_ms?: number | null; 
+/**
+ * On failure, why — the engine's message (timeout, refused, auth failure).
+ */
+error?: string | null }
 /**
  * Live transfer progress (tech-gui.md §4.3). The payload is `TransferProgressDto`,
  * routed to its owning session via `transfer_owner` (§3.4/§4.1).

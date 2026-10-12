@@ -5,14 +5,19 @@
   // surfaces inline without closing. Semantic tokens only.
   import { onMount, tick } from 'svelte';
   import { t } from 'svelte-i18n';
-  import type { HostInputDto } from '$lib/bindings';
-  import { Button, Icon } from '$lib/theme';
+  import type { HostInputDto, IdentityDto, KeyEntryDto } from '$lib/bindings';
+  import { listIdentities, listKeyEntries, testHostConnection } from '$lib/ipc/commands';
+  import { Button, Icon, StatusDot } from '$lib/theme';
   import Modal from '$lib/components/Modal.svelte';
+  import CredentialPicker from '$lib/components/CredentialPicker.svelte';
+  import type { CredentialOption } from '$lib/components/credentialPicker';
   import Select from '$lib/components/Select.svelte';
   import { isWindows } from '$lib/platform';
   import { maskAddress, maskHostname, maskText, streamerMode } from '$lib/stores/streamer';
+  import { toast } from '$lib/stores/toast';
   import {
     bracketed,
+    credentialFromHost,
     emptyForwardRow,
     formToInput,
     formErrorMessage,
@@ -52,6 +57,31 @@
   let hostnameEl = $state<HTMLInputElement>();
   let userEl = $state<HTMLInputElement>();
   let localEls = $state<HTMLInputElement[]>([]);
+
+  // The credential picker's options: keychain key entries and reusable login
+  // identities of `identities.toml`, loaded once per open (the editor remounts
+  // per open, so no live-refresh machinery is needed).
+  let keys = $state<KeyEntryDto[]>([]);
+  let identities = $state<IdentityDto[]>([]);
+  // A pin that resolved when the form was seeded but no longer exists (e.g. a
+  // cloud-sync merge dropped it while this form was closed) still round-trips:
+  // a missing option would render the select blank and a save would silently
+  // clear the pin.
+  const credentialStale = $derived(
+    (fields.credential.startsWith('key:') || fields.credential.startsWith('identity:')) &&
+      !credentialListed(fields.credential, keys, identities)
+  );
+
+  function credentialListed(
+    choice: string,
+    keys: KeyEntryDto[],
+    identities: IdentityDto[]
+  ): boolean {
+    const id = choice.startsWith('key:') ? choice.slice(4) : choice.slice(9);
+    return choice.startsWith('key:')
+      ? keys.some((k) => k.id === id)
+      : identities.some((i) => i.id === id);
+  }
 
   // In streamer mode an address present when the form opened shows its disguise,
   // read-only, until Reveal; a reveal lasts while this form is open (it is remounted per
@@ -93,7 +123,19 @@
   // The name is the on-disk key; a rename can't carry backend-only secrets across the
   // boundary (§3.4), so on edit it is immutable — rename by delete + re-add. Focus the
   // first editable field accordingly.
-  onMount(() => (mode === 'add' ? nameEl : hostnameMasked ? userEl : hostnameEl)?.focus());
+  onMount(() => {
+    void (async () => {
+      try {
+        const [k, i] = await Promise.all([listKeyEntries(), listIdentities()]);
+        keys = k;
+        identities = i;
+      } catch {
+        // A failed load leaves the picker with just "none" + the stale pin
+        // placeholder; saving still works and the backend re-validates ids.
+      }
+    })();
+    (mode === 'add' ? nameEl : hostnameMasked ? userEl : hostnameEl)?.focus();
+  });
 
   async function save(): Promise<void> {
     const result = formToInput(fields);
@@ -112,9 +154,78 @@
     }
   }
 
+  // Connection test: validates exactly what will be saved (it builds its payload
+  // through the same `formToInput` the save runs) but persists nothing. Feedback
+  // mirrors DockPilot's connection test: the button turns a spinner while the
+  // dial is in flight, the result lands as a badge beside it — success with the
+  // measured round-trip (colour-graded: ok < 300 ms, warn < 1 s, plain past
+  // that), failure with the engine's reason — and an IPC fault (a form that
+  // cannot even be tested) toasts. One run at a time.
+  let testing = $state(false);
+  let testResult = $state<{ ok: boolean; ms?: number; text: string } | null>(null);
+  const testStatus = $derived.by(() => {
+    if (!testResult?.ok) return 'crit' as const;
+    if ((testResult.ms ?? 0) < 300) return 'ok' as const;
+    if ((testResult.ms ?? 0) < 1000) return 'warn' as const;
+    return 'unknown' as const;
+  });
+
+  async function testConnection(): Promise<void> {
+    if (testing) return;
+    const result = formToInput(fields);
+    if (!result.ok) {
+      // Same validation the save would hit, so a bad form tests nothing.
+      error = result.error;
+      toast.error(formErrorMessage(result.error, $t));
+      return;
+    }
+    error = null;
+    testing = true;
+    testResult = null;
+    try {
+      const outcome = await testHostConnection(result.input);
+      testResult = outcome.ok
+        ? { ok: true, ms: outcome.latency_ms ?? 0, text: $t('hostEditor.testOk') }
+        : { ok: false, text: outcome.error ?? $t('hostEditor.testFailed') };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      testResult = { ok: false, text: message };
+      toast.error(message);
+    } finally {
+      testing = false;
+    }
+  }
+
   // On edit the DTO omits identity/password (§3.4), so the fields start blank and mean
   // "keep the stored value"; on add they mean "none".
   const secretHint = $derived(mode === 'edit' ? $t('hostEditor.keepCurrent') : undefined);
+
+  // What the pinned credential takes over at connect time, one hint line under the
+  // picker (mirrors the resolve order of `auth_resolve.rs`).
+  const credentialHint = $derived.by(() => {
+    if (fields.credential.startsWith('identity:')) return $t('hostEditor.credentialHintIdentity');
+    if (fields.credential.startsWith('key:')) return $t('hostEditor.credentialHintKey');
+    return null;
+  });
+
+  // The picker's flat option list, sections in display order: "none" first, then
+  // keychain keys, then login identities, then a stale pin that no longer resolves.
+  const credentialOptions = $derived.by<CredentialOption[]>(() => {
+    const out: CredentialOption[] = [
+      { value: 'none', label: $t('hostEditor.credentialNone'), group: null }
+    ];
+    for (const k of keys)
+      out.push({ value: `key:${k.id}`, label: k.label, group: $t('hostEditor.credentialGroupKeys') });
+    for (const i of identities)
+      out.push({
+        value: `identity:${i.id}`,
+        label: i.label,
+        group: $t('hostEditor.credentialGroupIdentities')
+      });
+    if (credentialStale)
+      out.push({ value: fields.credential, label: $t('hostEditor.credentialStale'), group: null });
+    return out;
+  });
 
   const label = 'block space-y-1 text-xs font-medium text-muted';
   const forwardGrid = 'grid grid-cols-[8.5rem,1fr,4.5rem,1.75rem] items-center gap-2';
@@ -200,6 +311,23 @@
           <span>{$t('hostEditor.port')}</span>
           <input bind:value={fields.port} inputmode="numeric" class={field} placeholder="22" />
         </label>
+      </div>
+
+      <!-- The single credential picker: pinning a key or identity takes over the
+           login at connect time; `none` falls back to the identity file / password
+           fields below (resolve order of `auth_resolve.rs`). App-drawn dropdown —
+           the native select popup is OS-drawn and unthemeable on Windows. -->
+      <div class="space-y-1">
+        <span class={label}>{ $t('hostEditor.credential') }</span>
+        <CredentialPicker
+          bind:value={fields.credential}
+          options={credentialOptions}
+          onpick={(v) => (fields.credential = v)}
+          label={$t('hostEditor.credential')}
+        />
+        {#if credentialHint}
+          <p class="text-xs text-faint">{credentialHint}</p>
+        {/if}
       </div>
 
       <label class={label}>
@@ -419,11 +547,47 @@
       {/if}
     </div>
 
-    <footer class="flex justify-end gap-2 border-t border-default px-5 py-3">
-      <Button variant="ghost" onclick={onCancel}>{$t('hostEditor.cancel')}</Button>
-      <Button variant="primary" type="submit" disabled={saving}>
-        {mode === 'add' ? $t('hostEditor.addTitle') : $t('hostEditor.save')}
-      </Button>
+    <footer class="flex items-center justify-between gap-2 border-t border-default px-5 py-3">
+      <div class="flex min-w-0 items-center gap-2">
+        <!-- The button stays static while testing (disabled only): swapping a
+             spinner into it changes its width and shifts the footer, and a
+             second spinner beside it was one animation too many. -->
+        <Button variant="ghost" disabled={testing || saving} onclick={() => void testConnection()}>
+          {$t('hostEditor.testConnection')}
+        </Button>
+        <!-- One subtle indicator: a small spinner + label while the dial is in
+             flight, then the graded result in the same spot. -->
+        {#if testing}
+          <span class="flex items-center gap-1.5 text-xs text-faint">
+            <Icon name="refresh" size={12} class="animate-spin" />
+            {$t('hostEditor.testing')}
+          </span>
+        {:else if testResult}
+          {#if testResult.ok}
+            <span
+              class="flex items-center gap-1.5 text-xs text-status-ok"
+              title={testResult.text}
+            >
+              <StatusDot status={testStatus} size={7} />
+              {testResult.ms} {$t('hostEditor.testMs')}
+            </span>
+          {:else}
+            <span
+              class="flex min-w-0 items-center gap-1.5 text-xs text-status-crit"
+              title={testResult.text}
+            >
+              <StatusDot status="crit" size={7} />
+              <span class="truncate">{$t('hostEditor.testUnreachable')} · {testResult.text}</span>
+            </span>
+          {/if}
+        {/if}
+      </div>
+      <div class="flex gap-2">
+        <Button variant="ghost" onclick={onCancel}>{$t('hostEditor.cancel')}</Button>
+        <Button variant="primary" type="submit" disabled={saving}>
+          {mode === 'add' ? $t('hostEditor.addTitle') : $t('hostEditor.save')}
+        </Button>
+      </div>
     </footer>
   </form>
 </Modal>

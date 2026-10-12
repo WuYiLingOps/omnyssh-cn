@@ -33,6 +33,28 @@ export interface HostFormFields {
   forwards: ForwardRow[];
   tunnelAutostart: boolean;
   forwardAgent: boolean;
+  /** The credential picker: `'none'`, `'key:<id>'`, or `'identity:<id>'`. */
+  credential: CredentialChoice;
+}
+
+/** The single credential picker's value: `'none'` uses the form's own identity
+ *  file / password fields; `'key:<id>'` pins a keychain key entry; `'identity:<id>'`
+ *  pins a reusable login identity (whose username + key/password then take over
+ *  the login, mirroring the resolve order in `auth_resolve.rs`). */
+export type CredentialChoice = string;
+
+export function credentialToRefs(choice: CredentialChoice): { keyId: string; identityId: string } {
+  if (choice.startsWith('key:')) return { keyId: choice.slice(4), identityId: '' };
+  if (choice.startsWith('identity:')) return { keyId: '', identityId: choice.slice(9) };
+  return { keyId: '', identityId: '' };
+}
+
+export function credentialFromHost(h: Pick<HostDto, 'keyId' | 'identityId'>): CredentialChoice {
+  // The identity wins when both are set (legacy data): at connect time it
+  // takes over the login, so the picker shows what actually applies.
+  if (h.identityId) return `identity:${h.identityId}`;
+  if (h.keyId) return `key:${h.keyId}`;
+  return 'none';
 }
 
 /** A validation failure as a message key plus interpolation values; the component
@@ -62,7 +84,8 @@ export function emptyForm(): HostFormFields {
     monitorPort: '',
     forwards: [],
     tunnelAutostart: false,
-    forwardAgent: false
+    forwardAgent: false,
+    credential: 'none'
   };
 }
 
@@ -98,7 +121,8 @@ export function formFromHost(h: HostDto): HostFormFields {
     monitorPort: h.monitorPort == null ? '' : String(h.monitorPort),
     forwards: h.localForwards.map(rowFromForward),
     tunnelAutostart: h.tunnelAutostart,
-    forwardAgent: h.forwardAgent
+    forwardAgent: h.forwardAgent,
+    credential: credentialFromHost(h)
   };
 }
 
@@ -226,6 +250,10 @@ export function formToInput(f: HostFormFields): HostFormResult {
   const password = f.password.trim();
   const notes = f.notes.trim();
   const tags = splitCsv(f.tags);
+  // The picker always sends definite ids (the edit form observes the current pin
+  // via `HostDto`): `''` = none/clear, an id = pin it. The backend's three-valued
+  // `None` = "unchanged" path stays for frontends that cannot observe the value.
+  const { keyId, identityId } = credentialToRefs(f.credential);
   return {
     ok: true,
     input: {
@@ -242,7 +270,9 @@ export function formToInput(f: HostFormFields): HostFormResult {
       localForwards,
       // The switch hides with the last row; a flag nobody can see must not linger.
       tunnelAutostart: f.tunnelAutostart && localForwards.length > 0,
-      forwardAgent: f.forwardAgent
+      forwardAgent: f.forwardAgent,
+      keyId,
+      identityId
     }
   };
 }
