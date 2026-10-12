@@ -7,12 +7,25 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
-## Unreleased
+## 1.1.6 — 2026-10-13
 
 ### Features
+- **Login passwords move into the secret store.** Both apps now keep a host's login password in the system keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service) with a machine-bound encrypted-file fallback for headless hosts, instead of the plaintext field in hosts.toml. On first start the app migrates every saved password out of hosts.toml once; hosts imported from an SSH config keep working as before. The terminal app's password prompt can remember what you type (Ctrl+R), and the desktop app's password dialog offers the same with a checkbox.
+- **A credentials screen in the desktop app.** Keychain key entries (`identities.toml`) and reusable login identities live on their own sidebar screen: import a private key from a file or paste, set or change its passphrase, and add a login identity (username plus key or password) that several hosts share. A host pins a key or identity from one picker in the host editor, with a hint of what the pin takes over at connect time; the pinned credential is offered before the host's own fields.
+- **Test a host's connection before saving it.** The desktop app's host editor gains a Test connection button that dials the form's current values — name, host, port, credential — through the same path a real connect uses, and reports the round-trip time, colour-graded, or the engine's reason for the failure. Nothing is persisted and no password is stored by the test.
+- **Cloud sync for hosts and snippets.** The desktop app syncs manual hosts and snippets across devices through an encrypted private GitHub Gist, connected once with the Device Flow (a two-step dialog: enter the code on the activation page, the app completes the connection on its own). A sync password encrypts the vault; auto-sync runs on a schedule and on startup, the sync-status row shows the state, version and last error at a glance, and the revision history restores an older version as a new one. When both sides edited the same item the local version wins, and the app says how many such merges there were instead of swallowing them.
 - **The interface can be shown in Simplified Chinese.** Settings, next to Theme, picks the language both apps use — English or 简体中文 — and the choice is kept in the shared config, so the terminal app and the desktop app follow each other and the language carries across restarts. Every screen, dialog, error and the desktop app's own menu and tray are translated; the language can also be set with `--lang zh-Hans` or `[ui] language` in the config file.
+- **Toasts in the desktop app.** Small confirmations and failures (cloud sync connect, copy, save) surface as toasts in a corner instead of console-only messages.
 
-## 1.1.5 — 2026-10-09
+### Bug Fixes
+- **A synced host that was deleted elsewhere no longer leaves its password behind.** Applying a cloud sync payload now also removes the stored login passwords of hosts that the merge dropped, mirroring the local delete path.
+- **The credentials dialogs keep their content usable on small windows.** The key-import, key-edit and identity dialogs scroll their body between a fixed header and footer instead of overflowing.
+
+### Build
+- **Static musl builds of the terminal app run on the encrypted-file secret store.** The Linux Secret Service needs libdbus at link time, which a static musl build cannot provide; such builds (Termux etc.) now compile without it and save passwords to the machine-bound file directly.
+- **Smaller debug artifacts and faster test runs on Windows.** Dev builds keep line tables only and drop dependency debug info (the sidecar .pdb of a 30 MB test binary used to reach ~280 MB), and test binaries no longer rebuild incrementally, which cargo never reused for them (each `cargo test` used to leave half a GB behind).
+
+## 1.1.5 — 2026-10-13
 
 ### Features
 - **Settings shows the installed version.** On Windows and Linux the desktop app showed its version nowhere. Settings now ends with it, and it can be copied into a bug report.
