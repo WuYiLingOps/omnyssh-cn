@@ -11,6 +11,7 @@
   import { answerPassword } from '$lib/ipc/commands';
 
   let password = $state('');
+  let remember = $state(false);
   let input = $state<HTMLInputElement>();
 
   // A fresh, focused form per request. Focus is taken outright: autofocus yields to
@@ -19,6 +20,7 @@
   $effect(() => {
     void requestId;
     password = '';
+    remember = false;
     input?.focus();
   });
 
@@ -39,19 +41,22 @@
     }
   });
 
-  async function answer(secret: string | null): Promise<void> {
+  async function answer(secret: string | null, keep = false): Promise<void> {
     const id = requestId;
     if (id === undefined) return;
     password = '';
+    remember = false;
     // Settled first either way: the answer goes once. A login that stopped
     // waiting (it gives up after a few minutes) refuses it; say so, or a typed
     // password would vanish without a word.
     settlePassword(id);
-    await answerPassword(id, secret).catch(() => lastError.set(String($t('password.gaveUp'))));
+    await answerPassword(id, secret, keep).catch(() =>
+      lastError.set(String($t('password.gaveUp'))),
+    );
   }
 
   function submit(): void {
-    if (password) void answer(password);
+    if (password) void answer(password, remember);
   }
 
   const field =
@@ -95,6 +100,12 @@
           class={field}
           autocomplete="off"
         />
+      </label>
+      <!-- The core keeps a remembered password only once the server has
+           accepted it, so this is safe to offer on every attempt. -->
+      <label class="flex items-center gap-2 text-xs text-muted">
+        <input type="checkbox" bind:checked={remember} class="accent-brand" />
+        <span>{$t('password.remember')}</span>
       </label>
       <p class="text-xs text-faint">{$t('password.memoryHint')}</p>
       {#if prompt.retry}
