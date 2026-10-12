@@ -69,6 +69,9 @@ Swaps every real IP on screen for a fake one. Record a demo or share your screen
 ### Light and dark themes
 Both ship in the app. Switch from the sidebar.
 
+### English and Simplified Chinese
+Every screen, dialog and error in both apps is translated into 简体中文. Pick the language in Settings, next to the theme, or start the terminal app with `--lang zh-Hans`. The choice is saved to the shared config, so the TUI and the desktop app follow each other and survive a restart.
+
 ### Small
 Around 130 MB of RAM with several sessions open, on a 20 MB download. Termius on the same machine, doing nothing, sat at 649 MB across nine processes. Full numbers in the [comparison](#comparison).
 
@@ -115,7 +118,7 @@ OmnySSH started in the terminal, and the TUI is still here, still maintained, st
 
 ![Demo](assets/demo.gif)
 
-Same engine underneath: the repo is a cargo workspace where `crates/omnyssh-core` holds the logic and the frontends sit on top. Dashboard, SFTP, snippets, multi session tabs, fuzzy search, plus four themes (`default`, `dracula`, `nord`, `gruvbox`) and remappable keys in `config.toml`.
+Same engine underneath: the repo is a cargo workspace where `crates/omnyssh-core` holds the logic and the frontends sit on top. Dashboard, SFTP, snippets, multi session tabs, fuzzy search, plus four themes (`default`, `dracula`, `nord`, `gruvbox`) and remappable keys in `config.toml`. The interface is available in English and 简体中文 — pick it in Settings or start with `--lang zh-Hans`.
 
 [![Crates.io](https://img.shields.io/crates/v/omnyssh.svg)](https://crates.io/crates/omnyssh)
 [![Crates downloads](https://img.shields.io/crates/d/omnyssh.svg)](https://crates.io/crates/omnyssh)
