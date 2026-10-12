@@ -8,12 +8,14 @@
 //! host list (`hosts.toml`).
 
 pub mod app_config;
+pub mod identities;
 pub mod snippets;
 pub mod ssh_config;
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
+use crate::secrets;
 use crate::ssh::client::{Host, HostSource};
 use crate::utils::platform;
 
@@ -32,6 +34,12 @@ struct HostsFile {
 ///
 /// Returns an empty `Vec` if the file does not exist yet.
 ///
+/// Saved login passwords live in the secret store, never in the file; every
+/// loaded host gets its saved password back-filled from there (keychain
+/// first, encrypted-file fallback), so callers see the same `Host.password`
+/// they did when it still lived in TOML. A store failure costs the password,
+/// not the host.
+///
 /// # Errors
 /// Returns an error if the file exists but cannot be read or parsed.
 pub fn load_hosts() -> anyhow::Result<Vec<Host>> {
@@ -47,7 +55,15 @@ pub fn load_hosts() -> anyhow::Result<Vec<Host>> {
     let file: HostsFile =
         toml::from_str(&content).with_context(|| format!("Failed to parse {}", path.display()))?;
 
-    Ok(file.hosts)
+    let mut hosts = file.hosts;
+    if let Some(dir) = platform::app_config_dir() {
+        for host in &mut hosts {
+            if host.password.is_none() {
+                host.password = secrets::load_login_password(&dir, &host.name);
+            }
+        }
+    }
+    Ok(hosts)
 }
 
 /// Persists the manually-added hosts (source == `Manual`) to
@@ -341,12 +357,23 @@ mod tests {
     }
 
     #[test]
-    fn hostsfile_password_survives_roundtrip() {
-        // Confirms passwords are persisted in plaintext.
+    fn hostsfile_password_never_touches_disk() {
+        // Passwords live in the secret store, never in hosts.toml: the field
+        // is skipped both ways. An old plaintext file parses silently (the
+        // migration owns the cleanup), a written one stays clean.
         let mut h = host("a", HostSource::Manual);
         h.password = Some("secret".to_string());
-        let toml_str = toml::to_string_pretty(&HostsFile { hosts: vec![h] }).unwrap();
+        let toml_str = toml::to_string_pretty(&HostsFile { hosts: vec![h.clone()] }).unwrap();
+        assert!(!toml_str.contains("secret"), "{toml_str}");
         let parsed: HostsFile = toml::from_str(&toml_str).unwrap();
-        assert_eq!(parsed.hosts[0].password.as_deref(), Some("secret"));
+        assert!(parsed.hosts[0].password.is_none());
+
+        // A legacy file with a plaintext password parses without error; the
+        // field is ignored and the migration moves it to the store.
+        let legacy: HostsFile = toml::from_str(
+            "hosts = [{ name = \"web\", hostname = \"10.0.0.1\", password = \"pw\" }]",
+        )
+        .unwrap();
+        assert!(legacy.hosts[0].password.is_none());
     }
 }

@@ -23,7 +23,24 @@ pub fn ssh_config_path() -> Option<PathBuf> {
 /// - macOS:   `~/Library/Application Support/omnyssh/`
 /// - Windows: `%APPDATA%\omnyssh\`
 pub fn app_config_dir() -> Option<PathBuf> {
+    if let Some(dir) = test_config_dir() {
+        return Some(dir);
+    }
     dirs::config_dir().map(|d| d.join("omnyssh"))
+}
+
+#[cfg(test)]
+fn test_config_dir() -> Option<std::path::PathBuf> {
+    TEST_CONFIG_DIR
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+/// Outside tests the override never applies.
+#[cfg(not(test))]
+fn test_config_dir() -> Option<std::path::PathBuf> {
+    None
 }
 
 /// Returns the path to the main application config file.
@@ -39,6 +56,12 @@ pub fn hosts_config_path() -> Option<PathBuf> {
 /// Returns the path to the snippets config file.
 pub fn snippets_config_path() -> Option<PathBuf> {
     app_config_dir().map(|d| d.join("snippets.toml"))
+}
+
+/// Returns the path to the identities config file (keychain key entries and
+/// login identities; metadata only — materials live in the secret store).
+pub fn identities_config_path() -> Option<PathBuf> {
+    app_config_dir().map(|d| d.join("identities.toml"))
 }
 
 /// Removes rolling log files in `log_dir` older than `max_age_days`.
@@ -88,4 +111,30 @@ pub fn cleanup_old_logs(log_dir: &Path, max_age_days: u64) -> usize {
     }
 
     removed
+}
+
+/// Overrides [`app_config_dir`] for tests that need real store roundtrips in
+/// an isolated scratch directory. Test-only: setting `None` restores the real
+/// paths. Never call from production code.
+#[cfg(test)]
+pub(crate) fn set_app_config_dir_for_tests(dir: Option<std::path::PathBuf>) {
+    TEST_CONFIG_DIR
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone_from(&dir);
+}
+
+#[cfg(test)]
+static TEST_CONFIG_DIR: std::sync::Mutex<Option<std::path::PathBuf>> = std::sync::Mutex::new(None);
+
+/// Held for the whole body of any test that points the config paths at a
+/// scratch directory: the override is process-global, so two tests flipping it
+/// concurrently would read and write each other's (or the real) config. Every
+/// `set_app_config_dir_for_tests` caller must hold this for the duration.
+#[cfg(test)]
+pub(crate) fn test_config_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(std::sync::Mutex::default)
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }

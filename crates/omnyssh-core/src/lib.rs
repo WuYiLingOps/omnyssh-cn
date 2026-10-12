@@ -8,6 +8,7 @@
 pub mod config;
 pub mod event;
 pub mod i18n;
+pub mod secrets;
 pub mod ssh;
 pub mod update;
 pub mod utils;

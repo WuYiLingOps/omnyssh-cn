@@ -24,7 +24,7 @@ struct State {
     /// How each login's password is sent, once a server has shown it.
     methods: HashMap<String, Method>,
     /// Prompts waiting for an answer, by request id.
-    pending: HashMap<u64, oneshot::Sender<Option<String>>>,
+    pending: HashMap<u64, oneshot::Sender<Option<PromptAnswer>>>,
     last_request: u64,
 }
 
@@ -106,6 +106,24 @@ pub(crate) async fn remembered(key: &str) {
     }
 }
 
+/// An answer to a password prompt: the secret to try, and whether the user
+/// asked to keep it for future logins. Only a password the server accepts is
+/// persisted (by the connection, after [`password::remember`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PromptAnswer {
+    pub password: String,
+    pub remember: bool,
+}
+
+impl PromptAnswer {
+    pub fn new(password: impl Into<String>) -> Self {
+        Self {
+            password: password.into(),
+            remember: false,
+        }
+    }
+}
+
 /// An answer that has no prompt to go to.
 #[derive(Debug, Error)]
 pub enum PasswordError {
@@ -115,17 +133,17 @@ pub enum PasswordError {
 }
 
 /// Answers the prompt `request_id` of a [`CoreEvent::PasswordRequired`]:
-/// `Some(password)` to try it, `None` to cancel the login.
+/// `Some(answer)` to try its password, `None` to cancel the login.
 ///
 /// # Errors
 /// [`PasswordError::NotRequested`] when no connection waits on that request.
-pub fn answer(request_id: u64, password: Option<String>) -> Result<(), PasswordError> {
+pub fn answer(request_id: u64, answer: Option<PromptAnswer>) -> Result<(), PasswordError> {
     let reply = state()
         .pending
         .remove(&request_id)
         .ok_or(PasswordError::NotRequested)?;
     reply
-        .send(password)
+        .send(answer)
         .map_err(|_| PasswordError::NotRequested)
 }
 
@@ -154,7 +172,7 @@ pub(crate) enum NoAnswer {
 // clippy 1.99 flags that, older clippy doesn't know the lint.
 #[allow(unknown_lints, clippy::double_must_use)]
 pub(crate) trait AskPassword: Send {
-    async fn ask(&mut self, prompt: Prompt<'_>) -> Result<String, NoAnswer>;
+    async fn ask(&mut self, prompt: Prompt<'_>) -> Result<PromptAnswer, NoAnswer>;
 }
 
 /// Asks through the frontends: sends [`CoreEvent::PasswordRequired`] and waits
@@ -176,7 +194,7 @@ impl Prompter {
 
 #[async_trait]
 impl AskPassword for Prompter {
-    async fn ask(&mut self, prompt: Prompt<'_>) -> Result<String, NoAnswer> {
+    async fn ask(&mut self, prompt: Prompt<'_>) -> Result<PromptAnswer, NoAnswer> {
         let (reply, answer) = oneshot::channel();
         let request_id = {
             let mut state = state();
@@ -202,7 +220,7 @@ impl AskPassword for Prompter {
         // Answering an expired prompt later fails with NotRequested, which
         // frontends report and close it on.
         match tokio::time::timeout(PROMPT_TIMEOUT, answer).await {
-            Ok(Ok(Some(password))) => Ok(password),
+            Ok(Ok(Some(answer))) => Ok(answer),
             Ok(_) => Err(NoAnswer::Cancelled),
             Err(_) => Err(NoAnswer::TimedOut),
         }
@@ -245,9 +263,32 @@ mod tests {
         let asking = tokio::spawn(async move { prompter.ask(prompt(false)).await });
 
         let id = asked(&mut rx).await;
-        answer(id, Some(String::from("secret"))).expect("answer");
-        assert_eq!(asking.await.expect("ran").as_deref(), Ok("secret"));
+        answer(id, Some(PromptAnswer::new("secret"))).expect("answer");
+        assert_eq!(
+            asking.await.expect("ran").expect("answered").password,
+            "secret"
+        );
         assert!(matches!(answer(id, None), Err(PasswordError::NotRequested)));
+    }
+
+    #[tokio::test]
+    async fn the_remember_flag_rides_with_the_answer() {
+        let (tx, mut rx) = mpsc::channel(8);
+        let mut prompter = Prompter::new(tx, "web-1");
+        let asking = tokio::spawn(async move { prompter.ask(prompt(false)).await });
+
+        let id = asked(&mut rx).await;
+        answer(
+            id,
+            Some(PromptAnswer {
+                password: String::from("secret"),
+                remember: true,
+            }),
+        )
+        .expect("answer");
+        let got = asking.await.expect("ran").expect("answered");
+        assert_eq!(got.password, "secret");
+        assert!(got.remember);
     }
 
     #[tokio::test]
@@ -271,7 +312,7 @@ mod tests {
         asking.abort();
         let _ = asking.await;
         assert!(matches!(
-            answer(id, Some(String::from("late"))),
+            answer(id, Some(PromptAnswer::new("late"))),
             Err(PasswordError::NotRequested)
         ));
     }

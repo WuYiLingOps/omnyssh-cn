@@ -2,9 +2,9 @@
 //!
 //! Provides [`SshSession`] — a thin wrapper around a russh client handle that
 //! supports connecting, executing commands, and graceful disconnect.
-//! Authentication order: SSH agent → identity file → default keys → password
-//! (by the password method or keyboard-interactive) → asking the user, when the
-//! caller lets it.
+//! Authentication order: a pinned keychain key (host `key_id` / identity) →
+//! SSH agent → identity file → default keys → password (by the password method
+//! or keyboard-interactive) → asking the user, when the caller lets it.
 //!
 //! Hosts with a `ProxyJump` are reached through their bastions: each hop is
 //! connected and authenticated in turn, and the next hop rides a
@@ -32,6 +32,8 @@ use russh::{cipher, compression, kex, mac, ChannelMsg};
 use tokio::sync::watch;
 use tokio::time;
 
+use crate::secrets;
+use crate::ssh::auth_resolve::{self, AuthPlan, KeychainKey};
 use crate::ssh::client::Host;
 use crate::ssh::identity::{self, IdentityError};
 use crate::ssh::known_hosts::{self, Verdict};
@@ -914,8 +916,9 @@ async fn connect_direct(
     passwords: &mut Passwords<'_>,
     lends_agent: bool,
 ) -> anyhow::Result<Handle<KnownHostsHandler>> {
-    let dial = || dial_direct(host, lends_agent);
-    finish_auth(dial().await?, host, key, dial, passwords).await
+    let (host, plan) = resolved(host).await;
+    let dial = || dial_direct(&host, lends_agent);
+    finish_auth(dial().await?, &host, key, dial, passwords, &plan).await
 }
 
 /// Reaches `host` through the already-connected bastion `via`: a `direct-tcpip`
@@ -928,8 +931,23 @@ async fn connect_tunnelled(
     passwords: &mut Passwords<'_>,
     lends_agent: bool,
 ) -> anyhow::Result<Handle<KnownHostsHandler>> {
-    let dial = || dial_tunnelled(via, host, lends_agent);
-    finish_auth(dial().await?, host, key, dial, passwords).await
+    let (host, plan) = resolved(host).await;
+    let dial = || dial_tunnelled(via, &host, lends_agent);
+    finish_auth(dial().await?, &host, key, dial, passwords, &plan).await
+}
+
+/// Resolves `host`'s identity/keychain references off the async worker, and
+/// applies the identity's username to the host that gets dialed.
+async fn resolved(host: &Host) -> (Host, AuthPlan) {
+    let owned = host.clone();
+    let plan = tokio::task::spawn_blocking(move || auth_resolve::resolve(&owned))
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!("the auth resolve task did not finish: {e}");
+            AuthPlan::empty()
+        });
+    let dialled = plan.apply_to(host);
+    (dialled, plan)
 }
 
 /// A connection that has shaken hands and passed the host-key check, not yet
@@ -1048,13 +1066,15 @@ fn known_hosts_handler(host: &Host, lends_agent: bool) -> (KnownHostsHandler, Li
 
 /// Authenticates the `first` connection as `host` (remembered passwords under
 /// `key`), converting a refusal into an error. `dial` opens another connection
-/// to the same hop, for keyboard-interactive.
+/// to the same hop, for keyboard-interactive. `plan` is the host's resolved
+/// identity/keychain references (its username is already applied to `host`).
 async fn finish_auth<F, Fut>(
     first: Dialed,
     host: &Host,
     key: &str,
     dial: F,
     passwords: &mut Passwords<'_>,
+    plan: &AuthPlan,
 ) -> anyhow::Result<Handle<KnownHostsHandler>>
 where
     F: Fn() -> Fut,
@@ -1066,7 +1086,8 @@ where
         .rsa_sigs
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let (handle, keys) = authenticate(handle, host, asking, rsa_sigs, &link.no_method).await?;
+    let (handle, keys) =
+        authenticate(handle, host, plan, asking, rsa_sigs, &link.no_method).await?;
     let encrypted_key = match keys {
         KeyAuth::Accepted => return Ok(handle),
         KeyAuth::Rejected { encrypted_key } => encrypted_key,
@@ -1100,20 +1121,49 @@ where
         _ => host.password.clone(),
     }
     .filter(|p| typed.as_ref() != Some(p));
-    let known = typed.is_some() || saved.is_some();
+    // A key-less identity is the credential: its saved password is tried
+    // before the host's own, and its rejection clears it from the store.
+    let identity_saved = match passwords {
+        Passwords::KeysOnly => None,
+        _ => plan.identity_password.clone(),
+    }
+    .filter(|p| typed.as_ref() != Some(p));
+    let saved = saved.filter(|p| identity_saved.as_ref() != Some(p));
+    let known = typed.is_some() || saved.is_some() || identity_saved.is_some();
     let mut refused = Vec::new();
     let mut spare = None;
-    for (password, was_typed) in typed
-        .map(|p| (p, true))
+    // Set when a saved password — the store's — was turned down and has been
+    // removed, so the failure can say so.
+    let mut saved_dropped = false;
+    // Where a saved password came from: only the store's own entries are
+    // cleared on a refusal, each under its own key_id route.
+    enum Saved {
+        Host,
+        Identity,
+    }
+    for (password, saved_in) in typed
+        .map(|p| (p, None::<Saved>))
         .into_iter()
-        .chain(saved.map(|p| (p, false)))
+        .chain(identity_saved.map(|p| (p, Some(Saved::Identity))))
+        .chain(saved.map(|p| (p, Some(Saved::Host))))
     {
         match offer(&mut first, &mut spare, &dial, host, key, &password).await {
             Offer::Here => return Ok(password_login(host, first.handle)),
             Offer::There(handle) => return Ok(password_login(host, handle)),
             Offer::Rejected => {
-                if was_typed {
-                    password::forget(key, &password);
+                match saved_in {
+                    None => password::forget(key, &password),
+                    Some(Saved::Host) => {
+                        // The store's answer is stale: clear it, so the next
+                        // attempt asks instead of burning another failed login
+                        // on a dead password.
+                        drop_saved_password(host, &password).await;
+                        saved_dropped = true;
+                    }
+                    Some(Saved::Identity) => {
+                        drop_identity_password(host, plan, &password).await;
+                        saved_dropped = true;
+                    }
                 }
                 refused.push(password);
             }
@@ -1138,6 +1188,7 @@ where
             &dial,
             host,
             key,
+            plan,
             &refused,
             new_key.as_deref(),
         )
@@ -1168,7 +1219,10 @@ where
         return Err(NoPassword::new(key, &host.name).into());
     }
 
-    let message = format!("SSH authentication failed for {}", host.name);
+    let mut message = format!("SSH authentication failed for {}", host.name);
+    if saved_dropped {
+        message.push_str("; the saved password was rejected and removed from the secret store");
+    }
     // Every attempt folds a dropped link into "not accepted". A connection that
     // is gone refused us only if the server hung up itself, as OpenSSH does
     // after too many failed logins.
@@ -1196,6 +1250,7 @@ async fn ask_password<F, Fut>(
     dial: &F,
     host: &Host,
     key: &str,
+    plan: &AuthPlan,
     refused: &[String],
     new_key: Option<&str>,
 ) -> anyhow::Result<Asked>
@@ -1212,10 +1267,11 @@ where
             retry,
             new_host_key: new_key,
         };
-        let password = match ask.ask(prompt).await {
-            Ok(password) => password,
+        let answer = match ask.ask(prompt).await {
+            Ok(answer) => answer,
             Err(no_answer) => return Ok(Asked::Unanswered(no_answer)),
         };
+        let password = answer.password;
         retry = true;
         // Sending it again would only cost another failed login.
         if refused.contains(&password) {
@@ -1229,6 +1285,9 @@ where
             Offer::Unavailable(e) => return Err(e),
             accepted => {
                 password::remember(key, &password);
+                if answer.remember {
+                    save_accepted_password(host, plan, &password).await;
+                }
                 return Ok(Asked::In(accepted));
             }
         }
@@ -1246,6 +1305,106 @@ fn password_login(host: &Host, handle: Handle<KnownHostsHandler>) -> Handle<Know
         "Connected via password authentication — consider setting up SSH key"
     );
     handle
+}
+
+/// Persists a just-accepted login password to the secret store, when the user
+/// asked to remember it. Only ever called after the server took the password.
+/// The keychain call is blocking, so it runs off the async worker; a failure
+/// is logged, never surfaced — the login already succeeded.
+///
+/// The save routes by credential type (identity-keychain plan §九.5): a host
+/// pinned to a key-less identity logs in *as* that identity, so its password
+/// is saved under `sshidpass/{id}` and follows the identity to every other
+/// host that pins it; anything else is the host's own `login/{name}`.
+async fn save_accepted_password(host: &Host, plan: &AuthPlan, password: &str) {
+    let host_name = host.name.clone();
+    // A keychain key means the identity's password plays no part in this
+    // login: the material is the key, so nothing identity-side is saved.
+    let identity_id = if plan.keychain.is_none() {
+        plan.identity_id.clone()
+    } else {
+        None
+    };
+    let password = password.to_string();
+    let saved =
+        tokio::task::spawn_blocking(move || -> Result<Option<secrets::SecretBackend>, String> {
+            let dir = crate::utils::platform::app_config_dir()
+                .ok_or("cannot determine the app config directory")?;
+            match identity_id {
+                Some(id) => secrets::save_identity_password(&dir, &id, &password).map(Some),
+                None => secrets::save_login_password(&dir, &host_name, &password).map(Some),
+            }
+        })
+        .await;
+    match saved {
+        Ok(Ok(Some(backend))) => tracing::info!(
+            host = %host.name,
+            "login password saved for future logins ({})",
+            backend.as_str()
+        ),
+        Ok(Ok(None)) => {}
+        Ok(Err(e)) => tracing::warn!("could not save the login password for {}: {e}", host.name),
+        Err(e) => tracing::warn!("the password save task did not finish: {e}"),
+    }
+}
+
+/// Removes the host's saved login password from the secret store, after the
+/// server turned it down. Best effort: a failure leaves the stale entry for
+/// the user to clear by hand.
+async fn drop_saved_password(host: &Host, password: &str) {
+    let Some(dir) = crate::utils::platform::app_config_dir() else {
+        return;
+    };
+    // Only drop it when the store still holds exactly this password, so a
+    // password rotated elsewhere in this session is not lost.
+    let host_name = host.name.clone();
+    let expected = password.to_string();
+    let dropped = tokio::task::spawn_blocking(move || {
+        if secrets::load_login_password(&dir, &host_name).as_deref() == Some(&expected) {
+            secrets::delete_login_password(&dir, &host_name);
+            true
+        } else {
+            false
+        }
+    })
+    .await
+    .unwrap_or(false);
+    if dropped {
+        tracing::info!(
+            host = %host.name,
+            "the saved login password was rejected and removed from the secret store"
+        );
+    }
+}
+
+/// Removes the referenced identity's saved password from the secret store,
+/// after the server turned it down. Best effort, like [`drop_saved_password`].
+async fn drop_identity_password(host: &Host, plan: &AuthPlan, password: &str) {
+    let Some(dir) = crate::utils::platform::app_config_dir() else {
+        return;
+    };
+    let Some(identity_id) = plan.identity_id.clone() else {
+        return;
+    };
+    // Only drop it when the store still holds exactly this password, so a
+    // password rotated elsewhere in this session is not lost.
+    let expected = password.to_string();
+    let dropped = tokio::task::spawn_blocking(move || {
+        if secrets::load_identity_password(&dir, &identity_id).as_deref() == Some(&expected) {
+            secrets::delete_identity_password(&dir, &identity_id);
+            true
+        } else {
+            false
+        }
+    })
+    .await
+    .unwrap_or(false);
+    if dropped {
+        tracing::info!(
+            host = %host.name,
+            "the identity's saved password was rejected and removed from the secret store"
+        );
+    }
 }
 
 /// How an offered password went.
@@ -1388,6 +1547,7 @@ enum KeyAuth {
 async fn authenticate(
     handle: Handle<KnownHostsHandler>,
     host: &Host,
+    plan: &AuthPlan,
     user_started: bool,
     rsa_sigs: RsaSigs,
     no_method: &Arc<AtomicBool>,
@@ -1395,6 +1555,24 @@ async fn authenticate(
     let rsa = RsaHash::new(rsa_sigs);
     let user = host.user.clone();
     let mut encrypted_key: Option<(String, bool)> = None;
+    let mut handle = handle;
+    let mut rsa = rsa;
+
+    // 0. The keychain key the host or its identity pins: explicit user
+    //    configuration beats everything ambient (agent, file keys). If the
+    //    server turns it down, nothing else is offered — the user chose this
+    //    credential, and every refusal burns the server's MaxAuthTries — but
+    //    the password flow after `authenticate` still gets its turn. Decode
+    //    failures never reach here: `resolve` drops them with a warning.
+    if let Some(pinned) = &plan.keychain {
+        let accepted = try_pem_auth(&mut handle, &user, pinned, &mut rsa, no_method).await?;
+        let key_auth = if accepted {
+            KeyAuth::Accepted
+        } else {
+            KeyAuth::Rejected { encrypted_key }
+        };
+        return Ok((handle, key_auth));
+    }
 
     // 1. Try SSH agent first — it handles passphrase-protected keys and is the
     //    most common auth method for non-interactive clients.
@@ -1660,6 +1838,30 @@ async fn try_key_auth(
     let result = time::timeout(
         AUTH_TIMEOUT,
         handle.authenticate_publickey(user, PrivateKeyWithHashAlg::new(Arc::new(key_pair), hash)),
+    )
+    .await
+    .map_err(|_| Stalled)?
+    .context("authenticate_publickey")?;
+    note_methods(&result, no_method);
+    Ok(result.success())
+}
+
+/// Offers the keychain key `pinned` — a PEM held in the secret store, decoded
+/// by [`auth_resolve::resolve`] — for `user`.
+async fn try_pem_auth(
+    handle: &mut Handle<KnownHostsHandler>,
+    user: &str,
+    pinned: &KeychainKey,
+    rsa: &mut RsaHash,
+    no_method: &AtomicBool,
+) -> anyhow::Result<bool> {
+    let hash = rsa.for_key(handle, pinned.key.public_key()).await;
+    let result = time::timeout(
+        AUTH_TIMEOUT,
+        handle.authenticate_publickey(
+            user,
+            PrivateKeyWithHashAlg::new(Arc::new(pinned.key.clone()), hash),
+        ),
     )
     .await
     .map_err(|_| Stalled)?

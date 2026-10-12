@@ -21,7 +21,7 @@ use tokio::sync::mpsc;
 use crate::event::CoreEvent;
 use crate::ssh::client::Host;
 use crate::ssh::identity;
-use crate::ssh::password::{AskPassword, NoAnswer, Prompt};
+use crate::ssh::password::{AskPassword, NoAnswer, Prompt, PromptAnswer};
 use crate::ssh::session::{
     connect_for_shell, forwards_agent, passphrase_required, Passwords, SshConnection,
 };
@@ -39,6 +39,11 @@ enum Ctrl {
     Input(Vec<u8>),
     /// Window resize; forwarded to the server as `window_change`.
     Resize { cols: u16, rows: u16 },
+    /// Ask the task to probe the interactive shell's working directory on its
+    /// own SSH connection (one exec channel, Linux `/proc` based). The reply is
+    /// `None` when the probe cannot answer (non-Linux, restricted /proc, no
+    /// sibling shell found).
+    ProbeCwd(tokio::sync::oneshot::Sender<Option<String>>),
     /// Request the task to end and close the connection.
     Close,
 }
@@ -183,6 +188,67 @@ async fn open_shell(
     Ok(channel)
 }
 
+// --- interactive-shell cwd probe -------------------------------------------
+//
+// The upload/download dialogs want the directory the user is actually standing
+// in. SSH never reports it, so the session task runs a one-shot probe on its
+// own connection: sshd forks every session's child off the connection process,
+// so the probe command's siblings are exactly the interactive shell (plus this
+// very exec wrapper). Reading `/proc/<sibling>/cwd` then yields the shell's
+// working directory without touching the user's terminal.
+//
+// Linux-only by design (it needs `/proc/<pid>/cwd`); elsewhere it prints
+// nothing and the frontend falls back to the remembered transfer directory.
+
+/// POSIX probe. The login shell that runs `exec` is the child of the sshd
+/// connection process; its siblings with the same parent and a readable cwd
+/// are printed, first match wins. Skips itself (`$$`). Pure `read`/`readlink`
+/// — no `ps`/`awk`, so busybox images probe the same way.
+const CWD_PROBE: &str = concat!(
+    "for d in /proc/[0-9]*/stat; do ",
+    "p=${d%/stat}; p=${p#/proc/}; ",
+    "[ \"$p\" != \"$$\" ] || continue; ",
+    "read -r _ _ _ ppid _ < \"$d\" 2>/dev/null || continue; ",
+    "[ \"$ppid\" = \"$PPID\" ] || continue; ",
+    "readlink \"/proc/$p/cwd\" 2>/dev/null && break; ",
+    "done"
+);
+
+/// Probe budget: the script is a single `/proc` scan, so anything slower means
+/// the connection is wedged — bail and let the caller fall back.
+const CWD_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Runs [`CWD_PROBE`] on its own exec channel of `handle` and returns the first
+/// absolute path it printed. `None` on any failure — the caller falls back.
+async fn probe_shell_cwd(handle: &SshConnection) -> Option<String> {
+    let mut channel = handle.channel_open_session().await.ok()?;
+    channel.exec(true, CWD_PROBE).await.ok()?;
+    let mut out = Vec::new();
+    let collect = async {
+        while let Some(msg) = channel.wait().await {
+            match msg {
+                ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. } => {
+                    out.extend_from_slice(&data);
+                }
+                ChannelMsg::Eof | ChannelMsg::Close => break,
+                _ => {}
+            }
+        }
+    };
+    tokio::time::timeout(CWD_PROBE_TIMEOUT, collect).await.ok()?;
+    parse_cwd_output(&out)
+}
+
+/// First absolute-path line of the probe output; sane length bound. Pure, so
+/// the edge cases are unit-testable.
+fn parse_cwd_output(out: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(out);
+    text.lines()
+        .map(str::trim)
+        .find(|l| l.starts_with('/') && l.len() <= 4096)
+        .map(str::to_string)
+}
+
 /// Owns the russh channel for one session and multiplexes I/O until close/EOF.
 #[allow(clippy::too_many_arguments)] // additive raw-output sink (§3.6) is the 8th
 async fn session_task(
@@ -230,7 +296,7 @@ async fn session_task(
             .map(|ch| (handle, ch)),
         Err(e) => Err(e),
     };
-    let (_handle, mut channel) = match result {
+    let (handle, mut channel) = match result {
         Ok(pair) => pair,
         Err(e) => {
             // The tab goes first: the TUI reports a closed tab in the status bar,
@@ -274,6 +340,12 @@ async fn session_task(
                 Some(Ctrl::Resize { cols, rows }) => {
                     let _ = channel.window_change(cols as u32, rows as u32, 0, 0).await;
                 }
+                Some(Ctrl::ProbeCwd(reply)) => {
+                    // An exec channel on this very connection: sshd forks session
+                    // children off one connection process, so the probe's
+                    // siblings are the interactive shell the user types in.
+                    let _ = reply.send(probe_shell_cwd(&handle).await);
+                }
                 Some(Ctrl::Close) | None => break,
             },
         }
@@ -309,6 +381,10 @@ impl InlinePrompt<'_> {
             match ctrl {
                 Ctrl::Input(_) => {}
                 Ctrl::Resize { cols, rows } => self.size = (cols, rows),
+                // Still connecting — no shell to probe yet.
+                Ctrl::ProbeCwd(reply) => {
+                    let _ = reply.send(None);
+                }
                 Ctrl::Close => self.closed = true,
             }
         }
@@ -325,7 +401,7 @@ impl InlinePrompt<'_> {
 
 #[async_trait]
 impl<'a> AskPassword for InlinePrompt<'a> {
-    async fn ask(&mut self, prompt: Prompt<'_>) -> Result<String, NoAnswer> {
+    async fn ask(&mut self, prompt: Prompt<'_>) -> Result<PromptAnswer, NoAnswer> {
         self.asked = true;
         self.flush();
         if self.closed {
@@ -349,6 +425,10 @@ impl<'a> AskPassword for InlinePrompt<'a> {
                     }
                 }
                 Some(Ctrl::Resize { cols, rows }) => self.size = (cols, rows),
+                // Still at the password prompt — no shell to probe yet.
+                Some(Ctrl::ProbeCwd(reply)) => {
+                    let _ = reply.send(None);
+                }
                 Some(Ctrl::Close) | None => {
                     self.closed = true;
                     return Err(NoAnswer::Cancelled);
@@ -356,7 +436,8 @@ impl<'a> AskPassword for InlinePrompt<'a> {
             }
         };
         self.print("\r\n").await;
-        typed.ok_or(NoAnswer::Cancelled)
+        // Typed straight into the terminal: nothing to remember here.
+        typed.map(PromptAnswer::new).ok_or(NoAnswer::Cancelled)
     }
 }
 
@@ -551,6 +632,20 @@ impl PtyManager {
             .find(|s| s.id == id)
             .map(|s| Arc::clone(&s.parser))
     }
+
+    /// Asks the session task to probe the interactive shell's working directory.
+    /// Returns a receiver for the reply (resolved inside the task; `None` when
+    /// the probe cannot answer), or `None` itself for an unknown/closed id.
+    /// Taking the lock only to ship the one-shot keeps it clear of any await.
+    pub fn probe_cwd(
+        &mut self,
+        id: SessionId,
+    ) -> Option<tokio::sync::oneshot::Receiver<Option<String>>> {
+        let session = self.sessions.iter().find(|s| s.id == id)?;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        session.ctrl_tx.send(Ctrl::ProbeCwd(tx)).ok()?;
+        Some(rx)
+    }
 }
 
 impl Default for PtyManager {
@@ -608,6 +703,35 @@ mod tests {
         assert_eq!(
             typed(&[b"\x1bsecret\r"]),
             Some(Some(String::from("secret")))
+        );
+    }
+
+    #[test]
+    fn the_cwd_probe_takes_the_first_absolute_line() {
+        assert_eq!(parse_cwd_output(b"/opt\n"), Some("/opt".into()));
+        assert_eq!(
+            parse_cwd_output(b"/root\n/srv\n"),
+            Some("/root".into()),
+            "later lines (a second shell channel) lose"
+        );
+        assert_eq!(
+            parse_cwd_output(b"/var/log with spaces\n"),
+            Some("/var/log with spaces".into()),
+            "spaces in a directory name survive"
+        );
+        assert_eq!(
+            parse_cwd_output(b"\n"),
+            None,
+            "no /proc, no reply (macOS, BSD, hardened kernels)"
+        );
+        assert_eq!(
+            parse_cwd_output(b"sh: syntax error\n"),
+            None,
+            "a non-POSIX login shell (fish) is a graceful miss"
+        );
+        assert_eq!(
+            parse_cwd_output(&[0x2f, 0x6f, 0x70, 0x74, 0x0a]),
+            Some("/opt".into())
         );
     }
 
