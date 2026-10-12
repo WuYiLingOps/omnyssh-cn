@@ -84,6 +84,12 @@
     <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
     <polyline points="8 12 12 16 16 12" />
     <line x1="12" y1="4" x2="12" y2="16" />
+  {:else if name === 'copy'}
+    <rect x="9" y="9" width="11" height="11" rx="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  {:else if name === 'clipboard'}
+    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+    <rect x="8" y="2" width="8" height="4" rx="1" />
   {:else if name === 'refresh'}
     <polyline points="23 4 23 10 17 10" />
     <polyline points="1 20 1 14 7 14" />
@@ -117,6 +123,10 @@
     <polyline points="2 12 12 17 22 12" />
   {:else if name === 'chevron'}
     <polyline points="6 9 12 15 18 9" />
+  {:else if name === 'more'}
+    <circle cx="5" cy="12" r="1.25" />
+    <circle cx="12" cy="12" r="1.25" />
+    <circle cx="19" cy="12" r="1.25" />
   {:else if name === 'grip'}
     <circle cx="9" cy="6" r="1" />
     <circle cx="15" cy="6" r="1" />

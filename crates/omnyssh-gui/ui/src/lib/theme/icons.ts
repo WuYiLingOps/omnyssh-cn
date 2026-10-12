@@ -22,6 +22,8 @@ export type IconName =
   | 'file'
   | 'upload'
   | 'download'
+  | 'copy'
+  | 'clipboard'
   | 'refresh'
   | 'key'
   | 'shield'
@@ -31,4 +33,5 @@ export type IconName =
   | 'tunnel'
   | 'layers'
   | 'chevron'
+  | 'more'
   | 'grip';
