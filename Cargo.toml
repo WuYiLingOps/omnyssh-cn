@@ -6,7 +6,7 @@ members = ["crates/omnyssh-core", "crates/omnyssh", "crates/omnyssh-gui"]
 default-members = ["crates/omnyssh-core", "crates/omnyssh"]
 
 [workspace.package]
-version = "1.1.5"
+version = "1.1.6"
 edition = "2021"
 rust-version = "1.89"
 license = "Apache-2.0"
@@ -39,3 +39,19 @@ opt-level = 3
 lto = true
 codegen-units = 1
 strip = true
+
+# Keep debug targets small on Windows, where MSVC writes debug info to a
+# sidecar .pdb that dwarfs the binary itself (a 30 MB test exe used to carry a
+# ~280 MB pdb). Line tables keep panic backtraces pointing at real files and
+# lines; full variable inspection stays available for our own crates, while
+# dependencies (the bulk of the symbol volume) ship without any debug info.
+[profile.dev]
+debug = "line-tables-only"
+[profile.dev.package."*"]
+debug = false
+# Test binaries rebuild with fresh fingerprints every run, so their incremental
+# caches were never reused — each `cargo test` used to leave half a GB of
+# session data behind that cargo never collects. Incremental brings nothing to
+# a build-once-run-once target; dev builds keep it.
+[profile.test]
+incremental = false
