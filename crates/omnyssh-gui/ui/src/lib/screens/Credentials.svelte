@@ -10,7 +10,7 @@
   import { t } from 'svelte-i18n';
   import { open as dialogOpen } from '@tauri-apps/plugin-dialog';
   import type { IdentityDto, KeyEntryDto, PrivateKeyFileDto } from '$lib/bindings';
-  import { Surface, Chip, Icon } from '$lib/theme';
+  import { Surface, Chip, Icon, Button } from '$lib/theme';
   import Modal from '$lib/components/Modal.svelte';
   import Select from '$lib/components/Select.svelte';
   import {
@@ -39,6 +39,7 @@
 
   // Import-key form state (one dialog at a time, so a single set suffices).
   let importPem = $state('');
+  let importFileName = $state('');
   let importEncrypted = $state(false);
   let importFileError = $state<string | null>(null);
   let importLabel = $state('');
@@ -84,10 +85,10 @@
   const input =
     'w-full rounded-lg bg-surface-inset px-3 py-2 text-sm text-fg outline-none ' +
     'focus-visible:ring-2 focus-visible:ring-focus placeholder:text-faint';
-  const fieldLabel = 'mb-1 block text-xs font-medium text-muted';
 
   function openImport(): void {
     importPem = '';
+    importFileName = '';
     importEncrypted = false;
     importFileError = null;
     importLabel = '';
@@ -128,6 +129,7 @@
     const picked = await dialogOpen({ multiple: false });
     if (!picked || typeof picked !== 'string') return;
     importFileError = null;
+    importFileName = picked.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? picked;
     try {
       const read: PrivateKeyFileDto = await readPrivateKeyFile(picked);
       if (read.error) {
@@ -136,6 +138,7 @@
       } else {
         importPem = read.pem;
         importEncrypted = read.encrypted;
+        if (importLabel === '') importLabel = importFileName;
       }
     } catch (e) {
       importFileError = message(e);
@@ -382,76 +385,94 @@
 
 {#if dialog?.kind === 'import-key'}
   <Modal label={$t('credentials.importTitle')} onClose={() => (dialog = null)}>
-    <form class="w-[30rem]" onsubmit={(e) => { e.preventDefault(); void submitImport(); }}>
-      <h2 class="mb-4 text-base font-semibold">{$t('credentials.importTitle')}</h2>
-      <div class="space-y-4">
-        <div>
-          <span class={fieldLabel}>{$t('credentials.pickFile')}</span>
-          <button type="button" class={input + ' text-left'} onclick={() => void pickKeyFile()}>
-            {importPem === ''
-              ? $t('credentials.pickFile')
-              : importFileError === null
-                ? '✓'
-                : '✗'}
+    <form class="flex min-h-0 flex-col" onsubmit={(e) => { e.preventDefault(); void submitImport(); }}>
+      <header class="border-b border-default px-5 py-3.5">
+        <h2 class="text-sm font-semibold">{$t('credentials.importTitle')}</h2>
+      </header>
+
+      <div class="min-h-0 flex-1 space-y-3.5 overflow-y-auto px-5 py-4">
+        <div class="space-y-1">
+          <span class="block text-xs font-medium text-muted">{$t('credentials.keyFile')}</span>
+          <button
+            type="button"
+            class="flex w-full items-center gap-2.5 rounded-lg border border-dashed border-strong px-3 py-2.5 text-sm text-fg transition hover:bg-surface-inset focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            onclick={() => void pickKeyFile()}
+          >
+            <span class={importPem === '' ? 'text-faint' : 'text-status-ok'}>
+              <Icon name="file" size={15} />
+            </span>
+            {#if importPem === ''}
+              <span class="text-muted">{$t('credentials.pickFile')}</span>
+            {:else}
+              <span class="min-w-0 flex-1 truncate text-left" title={importFileName}>
+                {importFileName}
+              </span>
+              <span class="shrink-0 text-status-ok">
+                <Icon name="check" size={14} />
+              </span>
+            {/if}
           </button>
           {#if importFileError}
-            <p class="mt-1 text-xs text-fg">{$t('credentials.fileError')}: {importFileError}</p>
+            <p class="text-xs text-status-crit">{$t('credentials.fileError')}: {importFileError}</p>
           {/if}
         </div>
-        <div>
-          <label class={fieldLabel} for="cred-key-label">{$t('credentials.label')}</label>
+        <label class="block space-y-1">
+          <span class="text-xs font-medium text-muted">{$t('credentials.label')}</span>
           <input id="cred-key-label" class={input} bind:value={importLabel} required />
-        </div>
-        <div>
-          <label class={fieldLabel} for="cred-key-pass">{$t('credentials.passphrase')}</label>
+        </label>
+        <label class="block space-y-1">
+          <span class="text-xs font-medium text-muted">{$t('credentials.passphrase')}</span>
           <input
             id="cred-key-pass"
             class={input}
             type="password"
             bind:value={importPassphrase}
           />
-          <p class="mt-1 text-xs text-muted">
+          <p class="text-[11px] text-faint">
             {importEncrypted
               ? $t('credentials.encryptedKeyNeedsPassphrase')
               : $t('credentials.passphraseHint')}
           </p>
-        </div>
+        </label>
       </div>
-      <div class="mt-5 flex justify-end gap-2">
-        <button type="button" class={pill} onclick={() => (dialog = null)}>
+
+      <footer class="flex justify-end gap-2 border-t border-default px-5 py-3">
+        <Button variant="ghost" onclick={() => (dialog = null)}>
           {$t('credentials.cancel')}
-        </button>
-        <button type="submit" class={pill} disabled={importPem === '' || importSaving}>
+        </Button>
+        <Button variant="primary" type="submit" disabled={importPem === '' || importSaving}>
           {$t('credentials.save')}
-        </button>
-      </div>
+        </Button>
+      </footer>
     </form>
   </Modal>
 {:else if dialog?.kind === 'edit-key'}
   {@const entry = dialog.entry}
   <Modal label={$t('credentials.edit')} onClose={() => (dialog = null)}>
-    <form class="w-[30rem]" onsubmit={(e) => { e.preventDefault(); void submitEditKey(); }}>
-      <h2 class="mb-4 text-base font-semibold">{entry.label}</h2>
-      <div class="space-y-4">
-        <div>
-          <label class={fieldLabel} for="cred-edit-label">{$t('credentials.label')}</label>
+    <form class="flex min-h-0 flex-col" onsubmit={(e) => { e.preventDefault(); void submitEditKey(); }}>
+      <header class="border-b border-default px-5 py-3.5">
+        <h2 class="text-sm font-semibold">{entry.label}</h2>
+      </header>
+
+      <div class="min-h-0 flex-1 space-y-3.5 overflow-y-auto px-5 py-4">
+        <label class="block space-y-1">
+          <span class="text-xs font-medium text-muted">{$t('credentials.label')}</span>
           <input id="cred-edit-label" class={input} bind:value={editKeyLabel} required />
-        </div>
-        <div>
-          <span class={fieldLabel}>{$t('credentials.passphrase')}</span>
-          <p class="text-xs text-muted">
-            {$t('credentials.passphraseHint')}
-          </p>
+        </label>
+        <div class="space-y-1">
+          <span class="text-xs font-medium text-muted">{$t('credentials.passphrase')}</span>
+          <p class="text-[11px] text-faint">{$t('credentials.passphraseHint')}</p>
         </div>
       </div>
-      <div class="mt-5 flex justify-end gap-2">
-        <button type="button" class={pill} onclick={() => (dialog = null)}>
+
+      <footer class="flex justify-end gap-2 border-t border-default px-5 py-3">
+        <Button variant="ghost" onclick={() => (dialog = null)}>
           {$t('credentials.cancel')}
-        </button>
-        <button type="submit" class={pill} disabled={editKeySaving}>
+        </Button>
+        <Button variant="primary" type="submit" disabled={editKeySaving}>
           {$t('credentials.save')}
-        </button>
-      </div>
+        </Button>
+      </footer>
     </form>
   </Modal>
 {:else if dialog?.kind === 'add-identity' || dialog?.kind === 'edit-identity'}
@@ -459,30 +480,33 @@
     label={identityId === null ? $t('credentials.newIdentity') : $t('credentials.identityTitle')}
     onClose={() => (dialog = null)}
   >
-    <form class="w-[30rem]" onsubmit={(e) => { e.preventDefault(); void submitIdentity(); }}>
-      <h2 class="mb-4 text-base font-semibold">
-        {identityId === null ? $t('credentials.newIdentity') : $t('credentials.identityTitle')}
-      </h2>
-      <div class="space-y-4">
-        <div>
-          <label class={fieldLabel} for="cred-id-label">{$t('credentials.label')}</label>
+    <form class="flex min-h-0 flex-col" onsubmit={(e) => { e.preventDefault(); void submitIdentity(); }}>
+      <header class="border-b border-default px-5 py-3.5">
+        <h2 class="text-sm font-semibold">
+          {identityId === null ? $t('credentials.newIdentity') : $t('credentials.identityTitle')}
+        </h2>
+      </header>
+
+      <div class="min-h-0 flex-1 space-y-3.5 overflow-y-auto px-5 py-4">
+        <label class="block space-y-1">
+          <span class="text-xs font-medium text-muted">{$t('credentials.label')}</span>
           <input id="cred-id-label" class={input} bind:value={identityLabel} required />
-        </div>
-        <div>
-          <label class={fieldLabel} for="cred-id-user">{$t('credentials.username')}</label>
+        </label>
+        <label class="block space-y-1">
+          <span class="text-xs font-medium text-muted">{$t('credentials.username')}</span>
           <input id="cred-id-user" class={input} bind:value={identityUsername} required />
-        </div>
-        <div>
-          <label class={fieldLabel} for="cred-id-key">{$t('credentials.bindKey')}</label>
+        </label>
+        <label class="block space-y-1">
+          <span class="text-xs font-medium text-muted">{$t('credentials.bindKey')}</span>
           <Select id="cred-id-key" class={input} bind:value={identityKeyId}>
             <option value="">{$t('credentials.bindKeyNone')}</option>
             {#each keys as entry (entry.id)}
               <option value={entry.id}>{entry.label}</option>
             {/each}
           </Select>
-        </div>
-        <div>
-          <label class={fieldLabel} for="cred-id-pass">{$t('credentials.password')}</label>
+        </label>
+        <label class="block space-y-1">
+          <span class="text-xs font-medium text-muted">{$t('credentials.password')}</span>
           <input
             id="cred-id-pass"
             class={input}
@@ -490,17 +514,18 @@
             bind:value={identityPassword}
             placeholder={identityPassword === null ? '••••••••' : ''}
           />
-          <p class="mt-1 text-xs text-muted">{$t('credentials.passwordHint')}</p>
-        </div>
+          <p class="text-[11px] text-faint">{$t('credentials.passwordHint')}</p>
+        </label>
       </div>
-      <div class="mt-5 flex justify-end gap-2">
-        <button type="button" class={pill} onclick={() => (dialog = null)}>
+
+      <footer class="flex justify-end gap-2 border-t border-default px-5 py-3">
+        <Button variant="ghost" onclick={() => (dialog = null)}>
           {$t('credentials.cancel')}
-        </button>
-        <button type="submit" class={pill} disabled={identitySaving}>
+        </Button>
+        <Button variant="primary" type="submit" disabled={identitySaving}>
           {$t('credentials.save')}
-        </button>
-      </div>
+        </Button>
+      </footer>
     </form>
   </Modal>
 {:else if dialog?.kind === 'delete-key'}
@@ -510,25 +535,26 @@
     onClose={() => (dialog = null)}
   >
     <form
-      class="w-[26rem]"
       onsubmit={(e) => {
         e.preventDefault();
         void confirmDeleteKey(entry.id);
       }}
     >
-      <h2 class="mb-2 text-base font-semibold">
-        {$t('credentials.deleteTitle', { values: { name: entry.label } })}
-      </h2>
-      <p class="mb-5 text-sm text-muted">{$t('credentials.deleteHint')}</p>
-      <div class="flex justify-end gap-2">
-        <button type="button" class={pill} onclick={() => (dialog = null)}>
+      <header class="border-b border-default px-5 py-3.5">
+        <h2 class="text-sm font-semibold">
+          {$t('credentials.deleteTitle', { values: { name: entry.label } })}
+        </h2>
+      </header>
+      <p class="px-5 py-4 text-sm text-muted">{$t('credentials.deleteHint')}</p>
+      <footer class="flex justify-end gap-2 border-t border-default px-5 py-3">
+        <Button variant="ghost" onclick={() => (dialog = null)}>
           {$t('credentials.cancel')}
-        </button>
-        <button type="submit" class={pill}>
-          <Icon name="trash" size={12} />
+        </Button>
+        <Button variant="primary" type="submit">
+          <Icon name="trash" size={13} />
           {$t('credentials.delete')}
-        </button>
-      </div>
+        </Button>
+      </footer>
     </form>
   </Modal>
 {:else if dialog?.kind === 'delete-identity'}
@@ -538,25 +564,26 @@
     onClose={() => (dialog = null)}
   >
     <form
-      class="w-[26rem]"
       onsubmit={(e) => {
         e.preventDefault();
         void confirmDeleteIdentity(identity.id);
       }}
     >
-      <h2 class="mb-2 text-base font-semibold">
-        {$t('credentials.deleteTitle', { values: { name: identity.label } })}
-      </h2>
-      <p class="mb-5 text-sm text-muted">{$t('credentials.deleteHint')}</p>
-      <div class="flex justify-end gap-2">
-        <button type="button" class={pill} onclick={() => (dialog = null)}>
+      <header class="border-b border-default px-5 py-3.5">
+        <h2 class="text-sm font-semibold">
+          {$t('credentials.deleteTitle', { values: { name: identity.label } })}
+        </h2>
+      </header>
+      <p class="px-5 py-4 text-sm text-muted">{$t('credentials.deleteHint')}</p>
+      <footer class="flex justify-end gap-2 border-t border-default px-5 py-3">
+        <Button variant="ghost" onclick={() => (dialog = null)}>
           {$t('credentials.cancel')}
-        </button>
-        <button type="submit" class={pill}>
-          <Icon name="trash" size={12} />
+        </Button>
+        <Button variant="primary" type="submit">
+          <Icon name="trash" size={13} />
           {$t('credentials.delete')}
-        </button>
-      </div>
+        </Button>
+      </footer>
     </form>
   </Modal>
 {/if}
