@@ -13,6 +13,7 @@
   import Dashboard from '$lib/screens/Dashboard.svelte';
   import Credentials from '$lib/screens/Credentials.svelte';
   import Snippets from '$lib/screens/Snippets.svelte';
+  import CloudSyncScreen from '$lib/screens/CloudSyncScreen.svelte';
   import Settings from '$lib/screens/Settings.svelte';
   import TerminalView from '$lib/screens/TerminalView.svelte';
   import SftpView from '$lib/screens/SftpView.svelte';
@@ -41,6 +42,7 @@
     $activeEntity.kind === 'dashboard' ||
       $activeEntity.kind === 'credentials' ||
       $activeEntity.kind === 'snippets' ||
+      $activeEntity.kind === 'cloudsync' ||
       $activeEntity.kind === 'settings'
   );
 </script>
@@ -66,6 +68,8 @@
             <Credentials />
           {:else if $activeEntity.kind === 'snippets'}
             <Snippets />
+          {:else if $activeEntity.kind === 'cloudsync'}
+            <CloudSyncScreen />
           {:else if $activeEntity.kind === 'settings'}
             <Settings />
           {/if}

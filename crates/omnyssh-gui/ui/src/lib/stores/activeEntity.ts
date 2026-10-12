@@ -9,6 +9,7 @@ export type ActiveEntity =
   | { kind: 'dashboard' }
   | { kind: 'credentials' }
   | { kind: 'snippets' }
+  | { kind: 'cloudsync' }
   | { kind: 'settings' }
   | { kind: 'session'; id: number };
 
@@ -19,6 +20,7 @@ function createActiveEntity() {
     selectDashboard: () => set({ kind: 'dashboard' }),
     selectCredentials: () => set({ kind: 'credentials' }),
     selectSnippets: () => set({ kind: 'snippets' }),
+    selectCloudSync: () => set({ kind: 'cloudsync' }),
     selectSettings: () => set({ kind: 'settings' }),
     activateSession: (id: number) => set({ kind: 'session', id })
   };

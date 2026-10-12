@@ -1,17 +1,20 @@
 <script lang="ts">
   // Cloud Sync settings section.
   // GitHub connect via Device Flow, sync password (set / unlock / change),
-  // auto-sync and sync-passwords switches, manual sync, status and the Gist
-  // revision history. The three decision dialogs (conflict / blocked /
-  // empty vault) mount here too: the engine parks those states until the
-  // user acts, so presenting them where the controls live keeps one owner.
+  // auto-sync and sync-passwords switches, a sync-status row (state badge +
+  // version + last error, DockPilot-style) and the Gist revision history. The
+  // three decision dialogs (conflict / blocked / empty vault) mount here too:
+  // the engine parks those states until the user acts, so presenting them
+  // where the controls live keeps one owner.
   import { t } from 'svelte-i18n';
   import { Surface, Icon } from '$lib/theme';
   import Modal from '$lib/components/Modal.svelte';
+  import { openExternal } from '$lib/ipc/openExternal';
   import { lastError } from '$lib/stores/notifications';
+  import { toast } from '$lib/stores/toast';
   import { cloudSync, syncActions } from '$lib/stores/cloudSync';
   import * as engine from '$lib/sync/engine';
-  import type { DeviceFlowStart } from '$lib/sync/types';
+  import type { DeviceFlowStart, SyncState } from '$lib/sync/types';
 
   const message = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
@@ -19,7 +22,7 @@
     | { kind: 'idle' }
     | { kind: 'starting' }
     | { kind: 'code'; start: DeviceFlowStart }
-    | { kind: 'polling' }
+    | { kind: 'polling'; start: DeviceFlowStart }
     | { kind: 'error'; message: string };
 
   let connect = $state<ConnectState>({ kind: 'idle' });
@@ -41,7 +44,35 @@
   let conflictPassword = $state('');
   let confirmPushLocal = $state(false); // empty-vault "push local" needs a second click
 
+  // Merge-conflict note: a merge resolves both-sides-modified fields local-first,
+  // so the remote edit is dropped — surface that instead of swallowing it. Fires
+  // off the engine's per-round count, auto-clears (a stale warning outlives its
+  // usefulness once the next sync reconciles).
+  let mergeConflictNote = $state<number | null>(null);
+  let mergeNoteTimer: ReturnType<typeof setTimeout> | undefined;
+  const MERGE_NOTE_TTL_MS = 8000;
+  $effect(() => {
+    const count = $cloudSync.lastMergeConflicts;
+    if (count == null) return;
+    mergeConflictNote = count;
+    if (mergeNoteTimer !== undefined) clearTimeout(mergeNoteTimer);
+    mergeNoteTimer = setTimeout(() => {
+      mergeNoteTimer = undefined;
+      mergeConflictNote = null;
+    }, MERGE_NOTE_TTL_MS);
+  });
+
   const s = $derived($cloudSync);
+
+  // Sync-state badge (DockPilot's SYNC_STATE_META): one pill that answers
+  // "is sync healthy right now" without reading the fine print.
+  const SYNC_STATE_META: Record<SyncState, { key: string; cls: string }> = {
+    IDLE: { key: 'cloudSync.stateIdle', cls: 'border-default text-muted' },
+    SYNCING: { key: 'cloudSync.stateSyncing', cls: 'border-accent text-fg' },
+    CONFLICT: { key: 'cloudSync.stateConflict', cls: 'border-status-warn text-status-warn' },
+    BLOCKED: { key: 'cloudSync.stateBlocked', cls: 'border-status-crit text-status-crit' },
+    ERROR: { key: 'cloudSync.stateError', cls: 'border-status-crit text-status-crit' }
+  };
 
   const fmtTime = (ts: number | null): string => {
     if (!ts) return '';
@@ -67,29 +98,44 @@
       connect = { kind: 'code', start };
       // Poll in the background; the modal shows the user code meanwhile.
       try {
-        connect = { kind: 'polling' };
+        connect = { kind: 'polling', start };
         await engine.completeGitHubAuth(start);
+        // Success closes the dialog; the status row now shows the account.
         connect = { kind: 'idle' };
+        toast.ok($t('cloudSync.toastConnected'));
       } catch (e) {
         connect = { kind: 'error', message: message(e) };
+        toast.error($t('cloudSync.toastConnectFailed', { values: { error: message(e) } }));
       }
     } catch (e) {
       connect = { kind: 'error', message: message(e) };
+      toast.error($t('cloudSync.toastConnectFailed', { values: { error: message(e) } }));
     }
   }
 
+  function cancelConnect(): void {
+    connect = { kind: 'idle' };
+  }
+
   function openDevicePage(): void {
-    if (connect.kind === 'code') {
-      window.open(connect.start.verificationUri, '_blank');
+    // The system browser via tauri-plugin-opener: window.open is a no-op in the
+    // Tauri WebView (and the device page is whitelisted in capabilities).
+    if (connect.kind === 'code' || connect.kind === 'polling') {
+      openExternal(connect.start.verificationUri).catch((e) => {
+        lastError.set(message(e));
+      });
     }
   }
 
   async function copyCode(): Promise<void> {
-    if (connect.kind !== 'code') return;
+    if (connect.kind !== 'code' && connect.kind !== 'polling') return;
     try {
       await navigator.clipboard.writeText(connect.start.userCode);
+      toast.ok($t('cloudSync.toastCodeCopied'));
     } catch {
-      // Clipboard blocked: the user can still type the code by hand.
+      // Clipboard blocked (webview permission / focus): the user can still
+      // select the code by hand — tell them instead of failing silently.
+      toast.error($t('cloudSync.toastCodeCopyFailed'));
     }
   }
 
@@ -200,8 +246,6 @@
 </script>
 
   <Surface class="p-5">
-    <h2 class="mb-3 text-sm font-semibold">{$t('cloudSync.title')}</h2>
-
     {#if !s.connected}
       <!-- Not connected: the entry point -->
       <div class="flex items-center justify-between gap-4">
@@ -211,19 +255,23 @@
         </div>
         <button
           type="button"
-          class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-strong px-4 py-1.5 text-sm text-fg transition hover:bg-accent hover:text-accent-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+          class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-strong px-4 py-1.5 text-sm text-fg transition hover:bg-accent hover:text-accent-fg disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           disabled={busy || connect.kind === 'starting' || connect.kind === 'polling'}
           onclick={startConnect}
         >
-          <Icon name="refresh" size={14} />
-          {$t('cloudSync.connect')}
+          <Icon name="refresh" size={14} class={connect.kind === 'starting' ? 'animate-spin' : ''} />
+          {connect.kind === 'starting' || connect.kind === 'polling'
+            ? $t('cloudSync.connecting')
+            : $t('cloudSync.connect')}
         </button>
       </div>
       {#if connect.kind === 'error'}
-        <p class="mt-2 text-xs text-status-warn">{connect.message}</p>
+        <p class="mt-2 text-xs text-status-warn">
+          {$t('cloudSync.connectFailed', { values: { error: connect.message } })}
+        </p>
       {/if}
     {:else}
-      <!-- Connected: account + status -->
+      <!-- Connected: account + actions -->
       <div class="flex items-center justify-between gap-4">
         <div class="flex min-w-0 items-center gap-3">
           {#if s.account?.avatarUrl}
@@ -231,7 +279,11 @@
           {/if}
           <div class="min-w-0">
             <p class="truncate text-sm">{s.account?.name ?? s.account?.login ?? $t('cloudSync.githubAccount')}</p>
-            <p class="text-xs text-muted">{lastSyncLabel}{s.syncing ? ` · ${$t('cloudSync.syncing')}` : ''}</p>
+            <p class="text-xs text-muted">
+              {s.gistId
+                ? $t('cloudSync.gistLinked')
+                : $t('cloudSync.gistMissing')}
+            </p>
           </div>
         </div>
         <div class="flex shrink-0 items-center gap-2">
@@ -241,23 +293,59 @@
             disabled={busy || s.syncing || s.securityState !== 'UNLOCKED'}
             onclick={syncNow}
           >
-            <Icon name="refresh" size={14} />
+            <Icon name="refresh" size={14} class={s.syncing ? 'animate-spin' : ''} />
             {$t('cloudSync.syncNow')}
           </button>
           <button
             type="button"
-            class="inline-flex items-center gap-1.5 rounded-full border border-strong px-3 py-1.5 text-sm text-muted transition hover:bg-surface-inset hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            class="inline-flex items-center gap-1.5 rounded-full border border-strong px-3 py-1.5 text-sm text-muted transition hover:bg-surface-inset hover:text-fg disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
             disabled={busy}
-            onclick={() => run(() => syncActions.disconnect())}
+            onclick={() =>
+              run(async () => {
+                await syncActions.disconnect();
+                toast.ok($t('cloudSync.toastDisconnected'));
+              })}
           >
             {$t('cloudSync.disconnect')}
           </button>
         </div>
       </div>
 
-      {#if s.lastError}
-        <p class="mt-2 text-xs text-status-warn">{s.lastError}</p>
+      {#if connect.kind === 'error'}
+        <p class="mt-2 text-xs text-status-warn">
+          {$t('cloudSync.connectFailed', { values: { error: connect.message } })}
+        </p>
       {/if}
+
+      {#if mergeConflictNote != null}
+        <p class="mt-2 text-xs text-status-warn">
+          {$t('cloudSync.mergeConflictNote', { values: { count: mergeConflictNote } })}
+        </p>
+      {/if}
+
+      <!-- Sync status row (DockPilot-style): the state pill answers "is sync
+           healthy" at a glance; the fine print carries the version, the last
+           run and the error inline so a failure needs no console. -->
+      <div class="mt-4 flex items-center justify-between gap-4 border-t border-default pt-4">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <p class="text-sm">{$t('cloudSync.statusLabel')}</p>
+            <span
+              class="shrink-0 rounded-full border px-2 py-0.5 text-[10px] {SYNC_STATE_META[s.syncState].cls}"
+            >
+              {$t(SYNC_STATE_META[s.syncState].key)}
+            </span>
+            {#if s.lastSyncVersion != null}
+              <span class="shrink-0 rounded-full border border-default px-2 py-0.5 text-[10px] text-muted tabular-nums">
+                v{s.lastSyncVersion}
+              </span>
+            {/if}
+          </div>
+          <p class="mt-0.5 truncate text-xs text-muted" title={s.lastError ?? ''}>
+            {lastSyncLabel}{s.lastError ? ` · ${s.lastError}` : ''}
+          </p>
+        </div>
+      </div>
 
       <!-- Auto sync -->
       <div class="mt-4 flex items-center justify-between gap-4 border-t border-default pt-4">
@@ -439,45 +527,50 @@
     </div>
   </Surface>
 
-  <!-- Device Flow modal: the user code front and center -->
+  <!-- Device Flow modal, DockPilot's two-step layout: ① the code with the
+       open-GitHub button on one row, ② the wait note. The code stays visible
+       and copyable for the whole wait (entering it takes a minute or two);
+       the earlier polling view replaced it with a placeholder, leaving users
+       with a code they could never read back. Errors close the dialog and
+       surface in the panel instead. -->
   {#if connect.kind === 'code' || connect.kind === 'polling'}
-    <Modal label={$t('cloudSync.connectTitle')} onClose={() => (connect = { kind: 'idle' })}>
+    <Modal label={$t('cloudSync.connectTitle')} onClose={cancelConnect}>
       <div class="p-6">
-        <h3 class="mb-1 text-base font-semibold">{$t('cloudSync.connectTitle')}</h3>
-        <p class="text-xs text-muted">{$t('cloudSync.connectSteps')}</p>
-        <div class="my-5 flex flex-col items-center gap-3">
-          <p class="select-text rounded-xl bg-surface-inset px-6 py-3 font-mono text-3xl tracking-[0.35em] tabular-nums">
-            {connect.kind === 'code' ? connect.start.userCode : '····-····'}
+        <h3 class="text-base font-semibold">{$t('cloudSync.connectTitle')}</h3>
+        <p class="mt-2 text-sm">{$t('cloudSync.stepOpen')}</p>
+        <div class="mt-3 flex flex-wrap items-center gap-3 rounded-xl bg-surface-inset p-3">
+          <p class="select-text font-mono text-2xl tracking-[0.3em] tabular-nums">
+            {connect.start.userCode}
           </p>
-          {#if connect.kind === 'code'}
-            <div class="flex items-center gap-2">
-              <button
-                type="button"
-                class="inline-flex items-center gap-1.5 rounded-full bg-accent px-4 py-1.5 text-sm text-accent-fg transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-                onclick={openDevicePage}
-              >
-                {$t('cloudSync.openGithub')}
-              </button>
-              <button
-                type="button"
-                class="inline-flex items-center gap-1.5 rounded-full border border-strong px-4 py-1.5 text-sm transition hover:bg-surface-inset focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-                onclick={copyCode}
-              >
-                <Icon name="copy" size={14} />
-                {$t('cloudSync.copyCode')}
-              </button>
-            </div>
-          {:else}
-            <p class="text-xs text-muted">{$t('cloudSync.waitingAuth')}</p>
-          {/if}
+          <button
+            type="button"
+            class="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border border-strong px-4 py-1.5 text-sm text-fg transition hover:bg-surface hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            onclick={openDevicePage}
+          >
+            {$t('cloudSync.openGithub')}
+            <Icon name="expand" size={13} />
+          </button>
         </div>
-        <div class="flex justify-end">
+        <p class="mt-4 text-sm text-muted">{$t('cloudSync.stepWait')}</p>
+        <div class="mt-3 flex items-center gap-2">
+          <Icon name="refresh" size={14} class="animate-spin text-muted" />
+          <p class="text-sm text-muted">{$t('cloudSync.waitingAuth')}</p>
+        </div>
+        <div class="mt-5 flex justify-end gap-2">
           <button
             type="button"
             class="rounded-full border border-strong px-4 py-1.5 text-sm text-muted transition hover:bg-surface-inset hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-            onclick={() => (connect = { kind: 'idle' })}
+            onclick={cancelConnect}
           >
             {$t('cloudSync.cancel')}
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-full bg-accent px-4 py-1.5 text-sm text-accent-fg transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            onclick={copyCode}
+          >
+            <Icon name="copy" size={14} />
+            {$t('cloudSync.copyDeviceCode')}
           </button>
         </div>
       </div>

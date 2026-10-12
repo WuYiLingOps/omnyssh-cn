@@ -19,7 +19,6 @@
   import { lastError } from '$lib/stores/notifications';
   import { checkUpdate, loadUpdateConfig, saveUpdateConfig } from '$lib/ipc/commands';
   import { installedVersion } from '$lib/ipc/appInfo';
-  import CloudSync from '$lib/components/CloudSync.svelte';
 
   const message = (e: unknown): string => (e instanceof Error ? e.message : String(e));
   const formatInterval = (secs: number): string => (secs < 60 ? `${secs}s` : `${secs / 60}m`);
@@ -168,9 +167,8 @@
       </div>
     </Surface>
 
-    <!-- Cloud sync: GitHub Gist vault for
-         manual hosts + snippets, shared with the TUI through hosts.toml -->
-    <CloudSync />
+    <!-- Cloud sync lives on its own sidebar screen (CloudSyncScreen) — it grew
+         enough controls (password lifecycle, history, dialogs) to warrant one. -->
 
     <!-- Dashboard -->
     <Surface class="p-5">

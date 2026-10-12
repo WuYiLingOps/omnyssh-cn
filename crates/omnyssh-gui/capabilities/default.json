@@ -18,6 +18,7 @@
       "allow": [
         { "url": "https://github.com/timhartmann7/omnyssh" },
         { "url": "https://github.com/timhartmann7/omnyssh/releases/*" },
+        { "url": "https://github.com/login/device" },
         { "url": "https://t.me/timhartmanndev" }
       ]
     }

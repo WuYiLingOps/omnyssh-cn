@@ -34,4 +34,5 @@ export type IconName =
   | 'layers'
   | 'chevron'
   | 'more'
-  | 'grip';
+  | 'grip'
+  | 'cloud';

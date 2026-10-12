@@ -3,7 +3,8 @@
   // parent sets and stay theme-correct. Registry grows as screens need glyphs.
   import type { IconName } from './icons';
 
-  let { name, size = 18, label }: { name: IconName; size?: number; label?: string } = $props();
+  let { name, size = 18, label, class: cls = '' }: { name: IconName; size?: number; label?: string; class?: string } =
+    $props();
 </script>
 
 <svg
@@ -15,6 +16,7 @@
   stroke-width="2"
   stroke-linecap="round"
   stroke-linejoin="round"
+  class={cls}
   role={label ? 'img' : 'presentation'}
   aria-label={label}
   aria-hidden={label ? undefined : 'true'}
@@ -134,5 +136,7 @@
     <circle cx="15" cy="12" r="1" />
     <circle cx="9" cy="18" r="1" />
     <circle cx="15" cy="18" r="1" />
+  {:else if name === 'cloud'}
+    <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
   {/if}
 </svg>

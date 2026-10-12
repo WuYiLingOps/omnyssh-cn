@@ -24,13 +24,14 @@
 
   // Entry-point labels are message keys, resolved through `$t` at render: a plain
   // string captured here would freeze the label at the language the app booted in.
-  type Selector = { kind: 'dashboard' | 'credentials' | 'snippets'; label: string; icon: IconName };
+  type Selector = { kind: 'dashboard' | 'credentials' | 'snippets' | 'cloudsync'; label: string; icon: IconName };
   type Spawner = { kind: SessionKind; label: string; icon: IconName };
 
   const selectors: Selector[] = [
     { kind: 'dashboard', label: 'sidebar.dashboard', icon: 'dashboard' },
     { kind: 'credentials', label: 'sidebar.credentials', icon: 'key' },
-    { kind: 'snippets', label: 'sidebar.snippets', icon: 'snippets' }
+    { kind: 'snippets', label: 'sidebar.snippets', icon: 'snippets' },
+    { kind: 'cloudsync', label: 'sidebar.cloudSync', icon: 'cloud' }
   ];
   const spawners: Spawner[] = [
     { kind: 'sftp', label: 'sidebar.sftp', icon: 'sftp' },
@@ -83,7 +84,9 @@
                 ? activeEntity.selectDashboard()
                 : sel.kind === 'credentials'
                   ? activeEntity.selectCredentials()
-                  : activeEntity.selectSnippets()}
+                  : sel.kind === 'snippets'
+                    ? activeEntity.selectSnippets()
+                    : activeEntity.selectCloudSync()}
           >
             <Icon name={sel.icon} />
             {#if !$sidebarCollapsed}<span class="truncate">{$t(sel.label)}</span>{/if}
