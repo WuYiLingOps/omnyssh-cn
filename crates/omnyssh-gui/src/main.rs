@@ -15,10 +15,16 @@ mod i18n;
 #[cfg(target_os = "macos")]
 mod menu;
 mod state;
+mod sync;
 mod tray;
 
 use commands::auth::{answer_password, unlock_identity};
 use commands::hosts::{delete_host, list_hosts, refresh_metrics, reload_hosts, save_host};
+use commands::identities::{
+    delete_identity, delete_key_entry, list_identities, list_key_entries, read_private_key_file,
+    save_identity, save_key_entry,
+};
+use commands::secrets::{host_secret_backend, set_host_secret};
 use commands::keysetup::start_key_setup;
 use commands::sftp::{
     list_local_dir, list_local_roots, preview_local_file, sftp_cancel, sftp_close, sftp_delete,
@@ -26,11 +32,18 @@ use commands::sftp::{
 };
 use commands::snippets::{delete_snippet, execute_snippet, list_snippets, save_snippet};
 use commands::terminal::{
-    terminal_close, terminal_open, terminal_paste, terminal_resize, terminal_write,
+    terminal_close, terminal_open, terminal_paste, terminal_probe_cwd, terminal_resize,
+    terminal_write,
 };
 use commands::tray::set_tray_behavior;
 use commands::tunnels::{tunnel_start, tunnel_stop};
 use commands::update::{check_update, install_update, load_update_config, save_update_config};
+use sync::github_sync::{
+    github_device_flow_poll, github_device_flow_start, github_gist_raw_content,
+    sync_delete_github_token, sync_delete_sync_password, sync_load_github_token,
+    sync_load_sync_password, sync_save_github_token, sync_save_sync_password,
+};
+use sync::payload::{sync_apply_hosts, sync_apply_snippets, sync_export_hosts};
 use omnyssh_core::event::{CoreEvent, SessionId};
 use omnyssh_core::ssh::pty::PtyManager;
 use state::GuiState;
@@ -40,6 +53,10 @@ use tauri_plugin_window_state::StateFlags;
 use tauri_specta::{collect_commands, collect_events, Builder};
 
 // Absolute at build time, so the export target is independent of the run CWD.
+// Its only readers are the debug-only bindings exporter and the tests, so a
+// release (non-test) build legitimately never touches it — silence the
+// dead-code lint there instead of falling back to a runtime path.
+#[cfg_attr(not(any(debug_assertions, test)), allow(dead_code))]
 const BINDINGS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/ui/src/lib/bindings.ts");
 
 /// How long the hidden window may wait for the page before it is revealed anyway.
@@ -98,6 +115,15 @@ fn specta_builder() -> Builder<tauri::Wry> {
             reload_hosts,
             save_host,
             delete_host,
+            set_host_secret,
+            host_secret_backend,
+            list_key_entries,
+            save_key_entry,
+            delete_key_entry,
+            list_identities,
+            save_identity,
+            delete_identity,
+            read_private_key_file,
             list_snippets,
             save_snippet,
             delete_snippet,
@@ -107,6 +133,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             terminal_resize,
             terminal_close,
             terminal_paste,
+            terminal_probe_cwd,
             sftp_open,
             sftp_list,
             sftp_upload,
@@ -131,7 +158,19 @@ fn specta_builder() -> Builder<tauri::Wry> {
             check_update,
             install_update,
             load_update_config,
-            save_update_config
+            save_update_config,
+            github_device_flow_start,
+            github_device_flow_poll,
+            github_gist_raw_content,
+            sync_save_github_token,
+            sync_load_github_token,
+            sync_delete_github_token,
+            sync_save_sync_password,
+            sync_load_sync_password,
+            sync_delete_sync_password,
+            sync_export_hosts,
+            sync_apply_hosts,
+            sync_apply_snippets
         ])
         .events(collect_events![
             events::HostsLoaded,
@@ -263,6 +302,8 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         // Opens the support dialog's GitHub/Telegram links in the default browser.
         .plugin(tauri_plugin_opener::init())
+        // Native pickers behind the terminal's right-click SFTP menu (§4.2 transfers).
+        .plugin(tauri_plugin_dialog::init())
         // Restores the window's size and position between launches; the flags keep it
         // away from everything that would touch the window itself (WINDOW_STATE_FLAGS).
         .plugin(
@@ -346,7 +387,10 @@ fn main() {
             // Pre-load the shared host config so the first `list_hosts` paints
             // immediately. A load failure here is non-fatal — the frontend's
             // `reload_hosts` re-attempts and surfaces the error (tech-gui.md §3.4).
+            // Before it, any plaintext password still in hosts.toml moves to
+            // the secret store (idempotent, one-shot per file).
             let gui_state = GuiState::new(engine_tx, pty);
+            omnyssh_core::secrets::migration::migrate_plaintext_passwords();
             if let Ok(hosts) = omnyssh_core::config::load_all_hosts() {
                 gui_state.set_hosts(hosts);
             }
@@ -392,6 +436,16 @@ mod tests {
             committed, generated,
             "ui/src/lib/bindings.ts is out of date — regenerate with `cargo tauri dev`"
         );
+    }
+
+    /// One-shot maintenance tool: rewrites the committed `bindings.ts` in place.
+    /// `cargo tauri dev` regenerates them too, but that needs the full npm
+    /// toolchain; this only needs a debug cargo. Run explicitly:
+    /// `cargo test -p omnyssh-gui --lib regenerate_bindings -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn regenerate_bindings() {
+        export_bindings(BINDINGS_PATH);
     }
 
     /// The retry exists for one case only: no page, not already retried, no renderer the

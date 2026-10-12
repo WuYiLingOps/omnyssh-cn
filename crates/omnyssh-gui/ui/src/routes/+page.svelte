@@ -11,16 +11,26 @@
   import { sessions } from '$lib/stores/sessions';
   import AppShell from '$lib/components/AppShell.svelte';
   import Dashboard from '$lib/screens/Dashboard.svelte';
+  import Credentials from '$lib/screens/Credentials.svelte';
   import Snippets from '$lib/screens/Snippets.svelte';
   import Settings from '$lib/screens/Settings.svelte';
   import TerminalView from '$lib/screens/TerminalView.svelte';
   import SftpView from '$lib/screens/SftpView.svelte';
+  import { initCloudSync, startCloudSyncAutomation } from '$lib/stores/cloudSync';
 
   onMount(async () => {
     try {
       hosts.set(await listHosts());
     } catch (err) {
       lastError.set(err instanceof Error ? err.message : String(err));
+    }
+    // Cloud sync: load config/token state,
+    // then start the triggers (startup check, change debounce, visibility).
+    try {
+      await initCloudSync();
+      startCloudSyncAutomation();
+    } catch (err) {
+      console.warn('cloud sync init failed:', err);
     }
   });
 
@@ -29,6 +39,7 @@
   // layer. The two are mutually exclusive — the §2 exactly-one-active invariant.
   const selectorActive = $derived(
     $activeEntity.kind === 'dashboard' ||
+      $activeEntity.kind === 'credentials' ||
       $activeEntity.kind === 'snippets' ||
       $activeEntity.kind === 'settings'
   );
@@ -51,6 +62,8 @@
         <div class="h-full overflow-auto overscroll-contain">
           {#if $activeEntity.kind === 'dashboard'}
             <Dashboard />
+          {:else if $activeEntity.kind === 'credentials'}
+            <Credentials />
           {:else if $activeEntity.kind === 'snippets'}
             <Snippets />
           {:else if $activeEntity.kind === 'settings'}
