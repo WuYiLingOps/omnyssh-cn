@@ -305,6 +305,10 @@ impl HostForm {
             user,
             port,
             identity_file,
+            // The pins are the credentials page's to change; the edit branch
+            // carries the stored ones over.
+            key_id: String::new(),
+            identity_id: String::new(),
             identities_only: false,
             password,
             proxy_jump: None,
@@ -670,6 +674,30 @@ pub fn filter_hosts(hosts: &[Host], query: &str) -> Vec<usize> {
 }
 
 impl App {
+    /// Writes or clears a host's saved login password in the secret store.
+    /// `Some(pw)` saves (or replaces) it, `None` deletes it. Blocking
+    /// keychain I/O — kept off the render loop; a failure is logged, never
+    /// surfaced: the host list itself is already saved.
+    pub(crate) async fn store_host_password(&self, host_name: &str, password: Option<&str>) {
+        let Some(dir) = omnyssh_core::utils::platform::app_config_dir() else {
+            return;
+        };
+        let host_name = host_name.to_string();
+        let password = password.map(str::to_string);
+        let result = tokio::task::spawn_blocking(move || match password {
+            Some(pw) => omnyssh_core::secrets::save_login_password(&dir, &host_name, &pw)
+                .map(|_| ()),
+            None => {
+                omnyssh_core::secrets::delete_login_password(&dir, &host_name);
+                Ok(())
+            }
+        })
+        .await;
+        if let Err(e) = result {
+            tracing::warn!("the secret store task did not finish: {e}");
+        }
+    }
+
     /// Handles the user confirming the Add or Edit host form.
     pub(crate) async fn handle_confirm_form(&mut self) {
         match self.view.host_list.popup.take() {
@@ -678,12 +706,19 @@ impl App {
                     Ok(host) => {
                         let has_password = host.password.is_some();
                         let host_name = host.name.clone();
+                        let password = host.password.clone();
 
                         {
                             let mut state = self.state.write().await;
                             state.hosts.push(host);
                         }
                         self.save_manual_hosts().await;
+
+                        // The password goes to the secret store, never to
+                        // hosts.toml.
+                        if let Some(pw) = &password {
+                            self.store_host_password(&host_name, Some(pw)).await;
+                        }
 
                         // Restart poll_manager to include the new host
                         {
@@ -751,6 +786,12 @@ impl App {
                             // Nor has IdentitiesOnly, and losing it brings back a login
                             // that offers every agent key.
                             host.identities_only = old_host.is_some_and(|h| h.identities_only);
+                            // The keychain/identity pins have no form field either
+                            // (the credentials page owns them), and dropping one
+                            // would silently fall back to password auth.
+                            host.key_id = old_host.map(|h| h.key_id.clone()).unwrap_or_default();
+                            host.identity_id =
+                                old_host.map(|h| h.identity_id.clone()).unwrap_or_default();
 
                             // An import is adopted under the name it was imported by; a copy
                             // already adopted keeps the one it carries. Dropping it brings the
@@ -791,6 +832,22 @@ impl App {
                         }
 
                         self.save_manual_hosts().await;
+
+                        // Sync the secret store with the form: a rename
+                        // re-files the saved password under the new name, a
+                        // new password replaces the saved one, a cleared one
+                        // removes it. `before` carries the old name.
+                        if let Some(before) = &before {
+                            if before.name != host.name {
+                                self.store_host_password(&host.name, host.password.as_deref())
+                                    .await;
+                                self.store_host_password(&before.name, None).await;
+                            } else if before.password != host.password {
+                                self.store_host_password(&host.name, host.password.as_deref())
+                                    .await;
+                            }
+                        }
+
                         self.sync_tunnels().await;
 
                         // The edit can change the address, the port or the monitoring
@@ -845,7 +902,7 @@ impl App {
     /// Handles the user confirming deletion.
     pub(crate) async fn handle_confirm_delete(&mut self) {
         if let Some(HostPopup::DeleteConfirm(idx)) = self.view.host_list.popup.take() {
-            {
+            let removed_name = {
                 let mut state = self.state.write().await;
                 if idx < state.hosts.len() {
                     let removed = state.hosts.remove(idx);
@@ -854,7 +911,14 @@ impl App {
                         crate::i18n::Key::StatusHostDeleted,
                         &[&removed.name],
                     ));
+                    Some(removed.name)
+                } else {
+                    None
                 }
+            };
+            // The saved login password does not outlive its host.
+            if let Some(name) = removed_name {
+                self.store_host_password(&name, None).await;
             }
             self.save_manual_hosts().await;
             self.sync_tunnels().await;

@@ -382,11 +382,16 @@ impl App {
                     return Ok(());
                 }
                 let prompt = self.view.password_prompts.remove(0);
-                let password =
-                    matches!(action, AppAction::SubmitPassword).then_some(prompt.field.value);
+                let answer = matches!(action, AppAction::SubmitPassword).then_some(
+                    omnyssh_core::ssh::password::PromptAnswer {
+                        password: prompt.field.value,
+                        remember: prompt.remember,
+                    },
+                );
                 // The connection checks it with the server and asks again if
-                // it is refused.
-                if omnyssh_core::ssh::password::answer(prompt.request_id, password).is_err() {
+                // it is refused; a checked answer is saved only once the
+                // server has accepted it.
+                if omnyssh_core::ssh::password::answer(prompt.request_id, answer).is_err() {
                     self.view.status_message = Some(crate::i18n::tf(
                         self.view.lang,
                         crate::i18n::Key::StatusNoLongerWaitingPassword,

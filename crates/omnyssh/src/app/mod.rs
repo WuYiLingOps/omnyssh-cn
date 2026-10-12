@@ -214,6 +214,10 @@ pub struct PasswordPrompt {
     /// Fingerprint of a host key first seen on this connection.
     pub new_host_key: Option<String>,
     pub field: FormField,
+    /// The user asked to keep the password for future logins. Only honored
+    /// once the server accepts it; the connection persists it to the secret
+    /// store.
+    pub remember: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -341,10 +345,16 @@ impl App {
             });
         }
 
-        // Load hosts in a background task.
+        // Load hosts in a background task. Before the first load, any
+        // plaintext password still in hosts.toml moves to the secret store
+        // (idempotent; a no-op when the file is already clean).
         {
             let tx = self.core_tx.clone();
             tokio::spawn(async move {
+                let _ = tokio::task::spawn_blocking(
+                    omnyssh_core::secrets::migration::migrate_plaintext_passwords,
+                )
+                .await;
                 match config::load_all_hosts() {
                     Ok(hosts) => {
                         let _ = tx.send(CoreEvent::HostsLoaded(hosts)).await;
@@ -843,6 +853,13 @@ impl App {
                         host.password_auth_disabled = Some(true);
                         // Clear password since key auth is now configured.
                         host.password = None;
+                        // And from the secret store, not just memory.
+                        let cleared = host_name.clone();
+                        tokio::task::spawn_blocking(move || {
+                            if let Some(dir) = omnyssh_core::utils::platform::app_config_dir() {
+                                omnyssh_core::secrets::delete_login_password(&dir, &cleared);
+                            }
+                        });
                     }
                     // Persist updated hosts to disk.
                     if let Err(e) = config::save_hosts(&state.hosts) {
@@ -975,6 +992,7 @@ impl App {
                     retry,
                     new_host_key,
                     field: FormField::default(),
+                    remember: false,
                 });
             }
 

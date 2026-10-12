@@ -981,7 +981,9 @@ pub fn render_passphrase_prompt(
             input,
             error: prompt.error.clone(),
             action: ":unlock  ",
+            remember: None,
         },
+        lang,
     );
 }
 
@@ -1010,7 +1012,9 @@ pub fn render_password_prompt(
                         .map(|key| tf(lang, Key::PopupNewHostKeyRecorded, &[key]))
                 }),
             action: ":log in  ",
+            remember: Some(prompt.remember),
         },
+        lang,
     );
 }
 
@@ -1027,9 +1031,12 @@ struct SecretPrompt<'a> {
     error: Option<String>,
     /// The Enter hint, e.g. `":unlock  "`.
     action: &'a str,
+    /// Whether to show the "remember for future logins" checkbox (Ctrl+R);
+    /// only the login-password prompt has one.
+    remember: Option<bool>,
 }
 
-fn render_secret_prompt(frame: &mut Frame, theme: &Theme, prompt: SecretPrompt<'_>) {
+fn render_secret_prompt(frame: &mut Frame, theme: &Theme, prompt: SecretPrompt<'_>, lang: Lang) {
     // Six text rows plus the border, whatever the frame height.
     let screen = frame.area();
     let width = (screen.width * 7 / 10).max(60).min(screen.width);
@@ -1089,6 +1096,29 @@ fn render_secret_prompt(frame: &mut Frame, theme: &Theme, prompt: SecretPrompt<'
                 Style::default().fg(theme.text_error),
             ))),
             rows[3],
+        );
+    }
+
+    if let Some(remember) = prompt.remember {
+        let box_char = if remember { "x" } else { " " };
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(
+                    format!("  [{box_char}] "),
+                    Style::default()
+                        .fg(theme.text_success)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    t(lang, Key::PopupRememberPassword),
+                    Style::default().fg(theme.text_secondary),
+                ),
+                Span::styled(
+                    " (Ctrl+R)",
+                    Style::default().fg(theme.text_muted),
+                ),
+            ])),
+            rows[4],
         );
     }
 
@@ -1876,6 +1906,7 @@ mod tests {
             retry: true,
             new_host_key: None,
             field: FormField::with_value("hunter2"),
+            remember: false,
         };
         let backend = ratatui::backend::TestBackend::new(80, 24);
         let mut terminal = ratatui::Terminal::new(backend).expect("terminal");

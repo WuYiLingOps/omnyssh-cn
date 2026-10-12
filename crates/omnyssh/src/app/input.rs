@@ -256,6 +256,11 @@ impl App {
             KeyCode::Esc => Some(AppAction::DismissPassword),
             KeyCode::Char('c') if ctrl => Some(AppAction::DismissPassword),
             KeyCode::Enter => Some(AppAction::SubmitPassword),
+            // Toggle the "remember for future logins" checkbox.
+            KeyCode::Char('r') if ctrl => {
+                prompt.remember = !prompt.remember;
+                None
+            }
             KeyCode::Backspace => {
                 prompt.field.backspace();
                 None

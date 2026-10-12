@@ -508,6 +508,8 @@ pub enum Key {
     PopupSshLoginTitle,
     /// "  Password (kept in memory until OmnySSH exits):" (password field label).
     PopupPasswordLabel,
+    /// "Remember for future logins" (password prompt checkbox, Ctrl+R).
+    PopupRememberPassword,
     /// "  Unlocking…" (passphrase prompt progress note).
     PopupUnlocking,
     /// "Permission denied, please try again." (password prompt retry error).
@@ -955,6 +957,7 @@ impl Key {
         Key::PopupPassphraseLabel,
         Key::PopupSshLoginTitle,
         Key::PopupPasswordLabel,
+        Key::PopupRememberPassword,
         Key::PopupUnlocking,
         Key::PopupPermissionDenied,
         Key::PopupNewHostKeyRecorded,
@@ -1322,6 +1325,7 @@ fn en(key: Key) -> &'static str {
         Key::PopupPassphraseLabel => "  Passphrase (kept in memory until OmnySSH exits):",
         Key::PopupSshLoginTitle => " SSH login — {} ",
         Key::PopupPasswordLabel => "  Password (kept in memory until OmnySSH exits):",
+        Key::PopupRememberPassword => "Remember for future logins",
         Key::PopupUnlocking => "  Unlocking…",
         Key::PopupPermissionDenied => "Permission denied, please try again.",
         Key::PopupNewHostKeyRecorded => "New host key recorded: {}",
@@ -1681,6 +1685,7 @@ fn zh_hans(key: Key) -> &'static str {
         Key::PopupPassphraseLabel => "  密码短语（保留在内存中，直到 OmnySSH 退出）：",
         Key::PopupSshLoginTitle => " SSH 登录 — {} ",
         Key::PopupPasswordLabel => "  密码（保留在内存中，直到 OmnySSH 退出）：",
+        Key::PopupRememberPassword => "记住密码，下次免输入",
         Key::PopupUnlocking => "  正在解锁…",
         Key::PopupPermissionDenied => "权限被拒绝，请重试。",
         Key::PopupNewHostKeyRecorded => "已记录新的主机密钥：{}",
