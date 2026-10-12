@@ -120,6 +120,14 @@ jobs:
           restore-keys: |
             ${{ matrix.target }}-cargo-
 
+      # Same as the CI workflow's Linux jobs: keyring's dbus-secret-service needs
+      # the dbus-1 pkg-config module when the core crate compiles for the gnu
+      # target. (The musl target compiles without keyring — cfg'd out — but this
+      # step runs on the same host and costs nothing.)
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
+
       # Cross-linker for the aarch64-musl target. Rust bundles the musl libc
       # itself; gcc-aarch64-linux-gnu only supplies the ELF linker.
       - name: Install aarch64 cross linker
