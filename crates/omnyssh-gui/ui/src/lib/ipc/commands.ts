@@ -8,6 +8,9 @@ import type {
   FileEntryDto,
   HostDto,
   HostInputDto,
+  IdentityDto,
+  KeyEntryDto,
+  PrivateKeyFileDto,
   SnippetDto,
   TerminalBytes,
   TraySupportDto,
@@ -103,6 +106,15 @@ export async function terminalResize(sessionId: number, cols: number, rows: numb
 export async function terminalClose(sessionId: number): Promise<void> {
   const res = await commands.terminalClose(sessionId);
   if (res.status === 'error') throw fail(res.error);
+}
+
+/** Probe the interactive shell's current directory behind a terminal tab, so
+ *  transfer dialogs can default to where the user actually is. `null` when the
+ *  remote cannot answer (non-Linux, restricted /proc, no shell found). */
+export async function terminalProbeCwd(sessionId: number): Promise<string | null> {
+  const res = await commands.terminalProbeCwd(sessionId);
+  if (res.status === 'error') throw fail(res.error);
+  return res.data;
 }
 
 /** Open an SFTP session for `hostName`; returns the public session id the sftp_*
@@ -267,8 +279,105 @@ export async function unlockIdentity(keyPath: string, passphrase: string): Promi
   if (res.status === 'error') throw fail(res.error);
 }
 
-/** Answer a login's password prompt; `null` cancels the login. */
-export async function answerPassword(requestId: number, password: string | null): Promise<void> {
-  const res = await commands.answerPassword(requestId, password);
+/**
+ * Answer a login's password prompt; `null` cancels the login. `remember`
+ * keeps the password for future logins — the core persists it only once the
+ * server has accepted it.
+ */
+export async function answerPassword(
+  requestId: number,
+  password: string | null,
+  remember: boolean,
+): Promise<void> {
+  const res = await commands.answerPassword(requestId, password, remember);
   if (res.status === 'error') throw fail(res.error);
+}
+
+/**
+ * Save (`password`) or clear (`null`) the host's login password in the secret
+ * store. Resolves to where the secret now lives (`keyring` / `file`) or
+ * `null` after a clear.
+ */
+export async function setHostSecret(
+  hostName: string,
+  password: string | null,
+): Promise<string | null> {
+  const res = await commands.setHostSecret(hostName, password);
+  if (res.status === 'error') throw fail(res.error);
+  return res.data;
+}
+
+/** Where the host's saved login password lives (`keyring` / `file`), if any. */
+export async function hostSecretBackend(hostName: string): Promise<string | null> {
+  const res = await commands.hostSecretBackend(hostName);
+  if (res.status === 'error') throw fail(res.error);
+  return res.data;
+}
+
+/* ------------------------------------------------------------------ */
+/* SSH credentials (identity-keychain plan §六)                        */
+/* ------------------------------------------------------------------ */
+
+/** The keychain key entries, with reference counts. Metadata only. */
+export async function listKeyEntries(): Promise<KeyEntryDto[]> {
+  const res = await commands.listKeyEntries();
+  if (res.status === 'error') throw fail(res.error);
+  return res.data;
+}
+
+/**
+ * Create (`id = null`) or update a keychain key entry. `pem = null` keeps the
+ * stored material; `passphrase = null` leaves it unchanged, `''` clears it.
+ */
+export async function saveKeyEntry(
+  id: string | null,
+  label: string,
+  pem: string | null,
+  passphrase: string | null
+): Promise<KeyEntryDto> {
+  const res = await commands.saveKeyEntry(id, label, pem, passphrase);
+  if (res.status === 'error') throw fail(res.error);
+  return res.data;
+}
+
+/** Delete a keychain key entry; refused while hosts or identities pin it. */
+export async function deleteKeyEntry(id: string): Promise<void> {
+  const res = await commands.deleteKeyEntry(id);
+  if (res.status === 'error') throw fail(res.error);
+}
+
+/** The reusable login identities, with reference counts. */
+export async function listIdentities(): Promise<IdentityDto[]> {
+  const res = await commands.listIdentities();
+  if (res.status === 'error') throw fail(res.error);
+  return res.data;
+}
+
+/**
+ * Create (`id = null`) or update a login identity. `password`: `null` =
+ * unchanged, `''` = delete. `keyId`: `null` = unchanged, `''` = unpin.
+ */
+export async function saveIdentity(
+  id: string | null,
+  label: string,
+  username: string,
+  password: string | null,
+  keyId: string | null
+): Promise<IdentityDto> {
+  const res = await commands.saveIdentity(id, label, username, password, keyId);
+  if (res.status === 'error') throw fail(res.error);
+  return res.data;
+}
+
+/** Delete a login identity; refused while hosts pin it. */
+export async function deleteIdentity(id: string): Promise<void> {
+  const res = await commands.deleteIdentity(id);
+  if (res.status === 'error') throw fail(res.error);
+}
+
+/** Read a private key file off disk for import, with the entry-level checks. */
+export async function readPrivateKeyFile(path: string): Promise<PrivateKeyFileDto> {
+  const res = await commands.readPrivateKeyFile(path);
+  if (res.status === 'error') throw fail(res.error);
+  return res.data;
 }

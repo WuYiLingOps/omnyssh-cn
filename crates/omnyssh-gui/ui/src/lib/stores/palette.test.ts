@@ -30,6 +30,8 @@ function host(name: string, extra: Partial<HostDto> = {}): HostDto {
     tags: [],
     source: 'manual',
     hasKey: false,
+    keyId: '',
+    identityId: '',
     monitoring: 'ssh',
     localForwards: [],
     tunnelAutostart: false,

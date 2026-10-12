@@ -25,7 +25,11 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
   invalidName: 'errors.invalidName',
   invalidHostname: 'errors.invalidHostname',
   invalidPort: 'errors.invalidPort',
-  saveFailed: 'errors.saveFailed'
+  saveFailed: 'errors.saveFailed',
+  keyInUse: 'errors.keyInUse',
+  identityInUse: 'errors.identityInUse',
+  keyEntryNotFound: 'errors.keyEntryNotFound',
+  identityNotFound: 'errors.identityNotFound'
 };
 
 /** The `{name}` placeholders a message interpolates, read off the English pack. */
@@ -38,7 +42,9 @@ const NEEDED_PARAMS: Readonly<Record<string, readonly string[]>> = {
   updateUnavailable: ['error'],
   updateFailed: ['error'],
   invalidForward: ['forward'],
-  saveFailed: ['error']
+  saveFailed: ['error'],
+  keyInUse: ['count'],
+  identityInUse: ['count']
 };
 
 /** Whether `code` is one the packs translate. */

@@ -38,6 +38,10 @@ async reloadHosts() : Promise<Result<null, CommandError>> {
  * is still never written. The frontend calls `reload_hosts` afterwards to refresh the
  * merged cache + restart the pollers. Secrets stay backend-side (§3.4): the payload's
  * password/identity never left the backend.
+ * 
+ * A non-empty password in the payload goes to the secret store (`login/{name}`),
+ * never to hosts.toml; an empty/absent one leaves whatever is saved untouched
+ * (the edit form seeds blank, "blank = unchanged").
  */
 async saveHost(input: HostInputDto) : Promise<Result<null, CommandError>> {
     try {
@@ -50,11 +54,134 @@ async saveHost(input: HostInputDto) : Promise<Result<null, CommandError>> {
 /**
  * Delete a manual host by name and persist (tech-gui.md §4.2, Stage 4.1). Only manual
  * entries live in `hosts.toml`, so an SSH-config name — or a missing one — is a no-op
- * success: the desired end state (absent) already holds.
+ * success: the desired end state (absent) already holds. The host's saved login
+ * password, if any, is cleared from the secret store best effort (a cleanup failure
+ * warns, it does not fail the delete).
  */
 async deleteHost(name: string) : Promise<Result<null, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("delete_host", { name }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Saves (`Some`) or clears (`None`) the login password of `host_name`.
+ * Returns where the secret now lives (`"keyring"` / `"file"`) or `None`
+ * after a clear. Clearing is best effort: an absent entry is success, a real
+ * backend failure surfaces here.
+ * 
+ * This only touches the store — `hosts.toml` never holds passwords, and a
+ * change applies from the next connection on (the host list re-reads the
+ * store on reload).
+ */
+async setHostSecret(hostName: string, password: string | null) : Promise<Result<string | null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_host_secret", { hostName, password }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Reports where the host's saved login password lives, if one does:
+ * `"keyring"` or `"file"`, else `None`. Read-only.
+ */
+async hostSecretBackend(hostName: string) : Promise<Result<string | null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("host_secret_backend", { hostName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Lists the keychain key entries with their reference counts. Read-only.
+ */
+async listKeyEntries() : Promise<Result<KeyEntryDto[], CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_key_entries") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Creates or updates a keychain key entry. `id = None` creates; an id that
+ * does not exist is an error. `pem = None` keeps the stored material (a
+ * rename or a passphrase change); `passphrase = None` leaves it unchanged,
+ * `Some("")` clears it. An encrypted PEM must come with its passphrase,
+ * which is verified before anything is stored.
+ */
+async saveKeyEntry(id: string | null, label: string, pem: string | null, passphrase: string | null) : Promise<Result<KeyEntryDto, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_key_entry", { id, label, pem, passphrase }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Deletes a keychain key entry, refusing while any host or identity still
+ * references it (`keyInUse` + the count). With no references left, the
+ * metadata and the stored materials (PEM + passphrase) go together.
+ */
+async deleteKeyEntry(id: string) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_key_entry", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Lists the reusable login identities with their reference counts. Read-only.
+ */
+async listIdentities() : Promise<Result<IdentityDto[], CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_identities") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Creates or updates a login identity. `id = None` creates; an unknown id is
+ * an error. `password`: `None` = unchanged, `Some("")` = delete, otherwise
+ * store. `key_id`: `None` = unchanged, `Some("")` = unpin (password auth),
+ * `Some(id)` = pin that key entry, which must exist. An identity without a
+ * key must end up with a password.
+ */
+async saveIdentity(id: string | null, label: string, username: string, password: string | null, keyId: string | null) : Promise<Result<IdentityDto, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_identity", { id, label, username, password, keyId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Deletes a login identity, refusing while any host still references it
+ * (`identityInUse` + the count). The stored password goes with it.
+ */
+async deleteIdentity(id: string) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_identity", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Reads a private key file off disk for import, with the entry-level checks:
+ * a public key is refused, the size is bounded, the content looks like a
+ * PEM. Returns the file content plus whether it is encrypted — the form asks
+ * for a passphrase only then. Decoding is verified in `save_key_entry`.
+ */
+async readPrivateKeyFile(path: string) : Promise<Result<PrivateKeyFileDto, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("read_private_key_file", { path }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -166,6 +293,20 @@ async terminalClose(sessionId: number) : Promise<Result<null, CommandError>> {
 async terminalPaste() : Promise<Result<null, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("terminal_paste") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Probe the interactive shell's current directory for `session_id`, so the
+ * upload/download dialogs can prefill where the user actually is. Linux hosts
+ * answer via a `/proc` scan on the tab's own SSH connection; elsewhere (and on
+ * any failure) this resolves to `None` and the UI keeps its fallback default.
+ */
+async terminalProbeCwd(sessionId: number) : Promise<Result<string | null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("terminal_probe_cwd", { sessionId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -386,11 +527,13 @@ async unlockIdentity(keyPath: string, passphrase: string) : Promise<Result<null,
 /**
  * Answer the `password-required` prompt `request_id`: a password to try, or
  * `null` to cancel that login. The connection checks it with the server and
- * asks again if it is refused.
+ * asks again if it is refused. `remember` asks to keep the password for
+ * future logins — honored only once the server has accepted it, in which
+ * case it is persisted to the secret store.
  */
-async answerPassword(requestId: number, password: string | null) : Promise<Result<null, CommandError>> {
+async answerPassword(requestId: number, password: string | null, remember: boolean) : Promise<Result<null, CommandError>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("answer_password", { requestId, password }) };
+    return { status: "ok", data: await TAURI_INVOKE("answer_password", { requestId, password, remember }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -469,6 +612,160 @@ async loadUpdateConfig() : Promise<Result<UpdateConfigDto, CommandError>> {
 async saveUpdateConfig(config: UpdateConfigDto) : Promise<Result<null, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("save_update_config", { config }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Starts the Device Flow: requests a device code; the user enters the user
+ * code at the verification URI.
+ */
+async githubDeviceFlowStart(clientId: string, scope: string | null) : Promise<Result<DeviceFlowStart, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("github_device_flow_start", { clientId, scope }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * One poll of the token endpoint. GitHub answers pending/slow_down with HTTP
+ * 200 plus an `error` field; the raw response body is returned verbatim and
+ * the frontend handles authorization_pending / slow_down / expired_token /
+ * access_denied per RFC 8628. A `String` (not `serde_json::Value`) keeps the
+ * IPC surface free of a `specta` JSON-value mapping.
+ */
+async githubDeviceFlowPoll(clientId: string, deviceCode: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("github_device_flow_poll", { clientId, deviceCode }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async githubGistRawContent(accessToken: string, rawUrl: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("github_gist_raw_content", { accessToken, rawUrl }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Saves the token: keychain first, encrypted file on fallback; returns where
+ * it landed ("keyring" | "file").
+ */
+async syncSaveGithubToken(token: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("sync_save_github_token", { token }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Reads the token (by the backend the frontend recorded); `None` when absent.
+ */
+async syncLoadGithubToken(backend: string) : Promise<Result<string | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("sync_load_github_token", { backend }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Deletes the token (called on disconnect); an absent entry counts as success.
+ */
+async syncDeleteGithubToken(backend: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("sync_delete_github_token", { backend }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Saves the sync password: keychain first, encrypted file on fallback;
+ * returns where it landed ("keyring" | "file").
+ */
+async syncSaveSyncPassword(password: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("sync_save_sync_password", { password }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Reads the remembered sync password (by the backend the frontend recorded);
+ * `None` when absent.
+ */
+async syncLoadSyncPassword(backend: string) : Promise<Result<string | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("sync_load_sync_password", { backend }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Deletes the remembered sync password (called on lock); an absent entry
+ * counts as success.
+ */
+async syncDeleteSyncPassword(backend: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("sync_delete_sync_password", { backend }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Exports the manual hosts for the sync payload. `load_hosts` reads
+ * `hosts.toml` (manual entries only) and back-fills each host's saved login
+ * password from the secret store; passwords are stripped again unless the
+ * user turned `sync_passwords` on. SSH-config imports are never exported —
+ * each device re-derives them from its own `~/.ssh/config`.
+ */
+async syncExportHosts(includePasswords: boolean) : Promise<Result<HostSyncDto[], CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("sync_export_hosts", { includePasswords }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Applies a merged host payload: replaces the manual host list wholesale and
+ * persists via the same atomic tmp+rename write every other writer uses.
+ * 
+ * Password handling: a non-empty incoming password is written to the secret
+ * store (key `login/{name}`); an absent one leaves the locally stored
+ * password untouched — the default (passwords excluded) payload can thus
+ * never wipe a device's saved credentials.
+ * 
+ * The frontend calls `reload_hosts` afterwards to refresh the merged cache,
+ * restart the pollers and broadcast `hosts-loaded`.
+ */
+async syncApplyHosts(hosts: HostSyncDto[]) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("sync_apply_hosts", { hosts }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Applies a merged snippet payload: replaces the snippet list wholesale.
+ * `save_snippet` upserts one entry at a time and cannot express deletions, so
+ * the merge result lands through this bulk write instead (same atomic
+ * snippets.toml write the CRUD commands use).
+ */
+async syncApplySnippets(snippets: SnippetDto[]) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("sync_apply_snippets", { snippets }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -554,6 +851,18 @@ message: string }
  */
 export type ConnectionStatusDto = { kind: "unknown" } | { kind: "connecting" } | { kind: "connected" } | { kind: "failed"; message: string }
 /**
+ * Device Flow start payload for the frontend.
+ */
+export type DeviceFlowStart = { deviceCode: string; userCode: string; verificationUri: string; 
+/**
+ * Expiry as a local millisecond timestamp.
+ */
+expiresAt: number; 
+/**
+ * Suggested polling interval in seconds.
+ */
+interval: number }
+/**
  * A background error surfaced to the user.
  */
 export type Error = { message: string }
@@ -573,7 +882,12 @@ export type FilePreview = { sessionId: number; path: string; content: string }
  * (tech-gui.md §3.4). `hasKey` reports whether an identity file is configured;
  * the key path itself never crosses the boundary.
  */
-export type HostDto = { name: string; hostname: string; user: string; port: number; tags: string[]; notes?: string | null; source: HostSourceDto; hasKey: boolean; passwordAuthDisabled?: boolean | null; monitoring: MonitorModeDto; monitorPort?: number | null; localForwards: LocalForwardDto[]; tunnelAutostart: boolean; forwardAgent: boolean }
+export type HostDto = { name: string; hostname: string; user: string; port: number; tags: string[]; notes?: string | null; source: HostSourceDto; hasKey: boolean; 
+/**
+ * The keychain key entry / identity this host pins (`""` = none). Ids
+ * only — the material itself stays in the secret store (§3.4).
+ */
+keyId: string; identityId: string; passwordAuthDisabled?: boolean | null; monitoring: MonitorModeDto; monitorPort?: number | null; localForwards: LocalForwardDto[]; tunnelAutostart: boolean; forwardAgent: boolean }
 /**
  * Inbound host form payload for `save_host` (tech-gui.md §4.1, Stage 4.1). Always
  * builds a **manual** `Host`: editing an SSH-config import saves a copy that shadows
@@ -582,7 +896,14 @@ export type HostDto = { name: string; hostname: string; user: string; port: numb
  * travel back out: the outbound `HostDto` omits both (§3.4). Inbound only, so it
  * derives `Deserialize` (not `Serialize`).
  */
-export type HostInputDto = { name: string; hostname: string; user: string; port: number; identityFile?: string | null; password?: string | null; proxyJump?: string | null; tags: string[]; notes?: string | null; monitoring?: MonitorModeDto | null; monitorPort?: number | null; localForwards: LocalForwardDto[]; tunnelAutostart: boolean; forwardAgent: boolean }
+export type HostInputDto = { name: string; hostname: string; user: string; port: number; identityFile?: string | null; password?: string | null; proxyJump?: string | null; 
+/**
+ * Reference updates, three-valued (i18n plan: the credentials page owns
+ * them): `None` = unchanged (the edit form cannot observe the current
+ * value), `Some("")` = clear, `Some(id)` = pin that entry — which must
+ * exist, or `save_host` refuses with a coded error.
+ */
+keyId?: string | null; identityId?: string | null; tags: string[]; notes?: string | null; monitoring?: MonitorModeDto | null; monitorPort?: number | null; localForwards: LocalForwardDto[]; tunnelAutostart: boolean; forwardAgent: boolean }
 /**
  * Host origin, mirrors `omnyssh_core::ssh::client::HostSource`.
  */
@@ -592,10 +913,67 @@ export type HostSourceDto = "sshConfig" | "manual"
  */
 export type HostStatusChanged = { hostName: string; status: ConnectionStatusDto }
 /**
+ * A host as the sync payload carries it — every field of the core `Host`
+ * except `password`'s special status: here it is `None` unless the user
+ * enabled `sync_passwords` (the value then comes from the secret store via
+ * `load_hosts`' back-fill). Mirrors the TOML round-trip the TUI performs.
+ */
+export type HostSyncDto = { name: string; hostname: string; user: string; port: number; 
+/**
+ * Stored pre-expansion (`~/.ssh/id_ed25519`), matching the TOML
+ * convention, so a synced path works on any device.
+ */
+identityFile?: string | null; identitiesOnly: boolean; 
+/**
+ * Login password — `None` unless the sync-passwords switch is on. `None`
+ * on apply means "leave whatever is stored locally alone".
+ */
+password?: string | null; proxyJump?: string | null; 
+/**
+ * Keychain key entry / identity pins. Ids only — the material stays in
+ * each device's secret store, so a synced pin resolves against the local
+ * `identities.toml` (cloud sync-ready, as with dockpilot's key ids).
+ */
+keyId: string; identityId: string; tags?: string[]; notes?: string | null; 
+/**
+ * Manual entries only ever travel the wire (SSH-config imports are
+ * re-derived locally on every device and never synced).
+ */
+source: HostSourceDto; originalSshHost?: string | null; monitoring: MonitorModeDto; monitorPort?: number | null; localForwards?: LocalForwardDto[]; tunnelAutostart?: boolean; forwardAgent?: boolean; keySetupDate?: string | null; passwordAuthDisabled?: boolean | null }
+/**
  * Full host list broadcast. Emitted by `reload_hosts` after refreshing the
  * cache; the bridge does not map `HostsLoaded` (tech-gui.md §3.4).
  */
 export type HostsLoaded = HostDto[]
+/**
+ * A reusable login identity as the credentials page sees it: username plus
+ * auth-method reference, no password material. `refCount` counts the hosts
+ * pinning it.
+ */
+export type IdentityDto = { id: string; label: string; username: string; 
+/**
+ * The pinned key entry, `""` = password auth.
+ */
+keyId: string; createdAt: number; refCount: number }
+/**
+ * A keychain key entry as the credentials page sees it (identity-keychain
+ * plan §六): metadata only — the PEM and its passphrase never cross the
+ * boundary. `refCount` is how many hosts + identities pin it; the frontend
+ * renders the "in use" badge and refuses deletion with it, no second pass.
+ */
+export type KeyEntryDto = { id: string; label: string; 
+/**
+ * OpenSSH `SHA256:...`, derived at import time.
+ */
+fingerprint: string; 
+/**
+ * The public half, copyable into a server's `authorized_keys`.
+ */
+publicKey: string; 
+/**
+ * Unix seconds.
+ */
+createdAt: number; refCount: number }
 /**
  * A private key is encrypted and no passphrase is cached yet. Frontends prompt
  * once per key path; the passphrase never crosses back out of the backend.
@@ -667,6 +1045,14 @@ export type MonitorModeDto = "ssh" | "tcpPort"
  * first seen on this connection, to check before typing.
  */
 export type PasswordRequired = { requestId: number; hostName: string; login: string; retry: boolean; newHostKey: string | null }
+/**
+ * A private key file read off disk for import (identity-keychain plan §六):
+ * the PEM content the save command will store, plus what was learned from
+ * it. `encrypted` tells the form whether to ask for a passphrase; `error`
+ * carries the rejection (a `.pub`, an oversized file, not a PEM) and then
+ * `pem` is empty.
+ */
+export type PrivateKeyFileDto = { pem: string; encrypted: boolean; error?: string | null }
 /**
  * A single process in the "top processes" panel (tech-gui.md §4.1).
  */

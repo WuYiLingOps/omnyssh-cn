@@ -17,7 +17,7 @@ import {
 } from './serverCard';
 
 function host(name = 'web-1'): HostDto {
-  return { name, hostname: '10.0.0.1', user: 'root', port: 22, tags: [], source: 'manual', hasKey: false, monitoring: 'ssh', localForwards: [], tunnelAutostart: false, forwardAgent: false };
+  return { name, hostname: '10.0.0.1', user: 'root', port: 22, tags: [], source: 'manual', hasKey: false, keyId: '', identityId: '', monitoring: 'ssh', localForwards: [], tunnelAutostart: false, forwardAgent: false };
 }
 
 function tcpHost(name = 'fw-1'): HostDto {

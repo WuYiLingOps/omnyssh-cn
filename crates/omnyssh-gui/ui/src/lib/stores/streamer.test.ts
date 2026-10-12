@@ -54,6 +54,8 @@ function host(hostname: string, localForwards: HostDto['localForwards'] = []): H
     tags: [],
     source: 'manual',
     hasKey: false,
+    keyId: '',
+    identityId: '',
     monitoring: 'ssh',
     localForwards,
     tunnelAutostart: false,
