@@ -12,6 +12,7 @@
   import PassphrasePrompt from '$lib/screens/PassphrasePrompt.svelte';
   import PasswordPrompt from '$lib/screens/PasswordPrompt.svelte';
   import UpdateBanner from './UpdateBanner.svelte';
+  import ToastHost from './ToastHost.svelte';
   import { get } from 'svelte/store';
   import { sidebarCollapsed, isCollapseChord, isCloseTabChord, isStreamerChord } from '$lib/stores/ui';
   import { activeEntity } from '$lib/stores/activeEntity';
@@ -66,4 +67,5 @@
   <PassphrasePrompt />
   <PasswordPrompt />
   <UpdateBanner />
+  <ToastHost />
 </div>
