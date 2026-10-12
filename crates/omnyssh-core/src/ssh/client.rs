@@ -64,8 +64,11 @@ pub struct Host {
     /// otherwise use up the server's `MaxAuthTries` first.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub identities_only: bool,
-    /// Password for password-based authentication (not recommended, used for initial setup).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Password for password-based authentication. Never serialized: it lives
+    /// in the secret store (`secrets` module) and is back-filled by
+    /// `config::load_hosts` on load. In-memory copies of a `Host` may carry it;
+    /// `hosts.toml` must not.
+    #[serde(skip)]
     pub password: Option<String>,
     /// ProxyJump host alias (for bastion / jump-host setups).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -73,6 +76,16 @@ pub struct Host {
     /// Organisational tags (e.g. `["production", "web"]`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+    /// Keychain key entry this host authenticates with (`identities.toml`
+    /// `keys[].id`). Empty = not used; non-empty takes priority over
+    /// `identity_file`. Metadata only — the PEM lives in the secret store.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub key_id: String,
+    /// Identity entry this host logs in as (`identities.toml`
+    /// `identities[].id`). Empty = not used; non-empty decides the username
+    /// and the auth method (keychain key, else the identity's password).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub identity_id: String,
     /// Free-text notes about this host.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
@@ -150,6 +163,8 @@ impl Default for Host {
             password: None,
             proxy_jump: None,
             tags: Vec::new(),
+            key_id: String::new(),
+            identity_id: String::new(),
             notes: None,
             source: HostSource::default(),
             original_ssh_host: None,
