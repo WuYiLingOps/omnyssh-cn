@@ -41,16 +41,14 @@ dirs = { workspace = true }
 # Secret store: login passwords live in the system keychain (keyring) with a
 # machine-bound AES-256-GCM encrypted-file fallback for headless environments.
 # The keychain needs libdbus (the `sync-secret-service` feature), which a
-# static musl build cannot link — musl targets run on the file backend alone.
+# static musl build cannot link — musl targets run on the file backend alone
+# (the cfg'd keyring dependency sits after the `[dev-dependencies]` table).
 machine-uid = { workspace = true }
 aes-gcm = { workspace = true }
 base64 = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
 getrandom = { workspace = true }
-
-[target.'cfg(not(target_env = "musl"))'.dependencies]
-keyring = { workspace = true }
 
 # glob(7) patterns in ssh_config `Include` directives
 glob = "0.3"
@@ -73,3 +71,10 @@ windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util"] }
 tempfile = "3"
+
+# Must stay a *table after every other table*: a `[target...]` section header
+# claims every following line until the next header, so placing it mid-file
+# silently detached glob/vt100/reqwest/... from musl builds. The keychain is
+# the one dependency musl must not pull (see the secret-store note above).
+[target.'cfg(not(target_env = "musl"))'.dependencies]
+keyring = { workspace = true }

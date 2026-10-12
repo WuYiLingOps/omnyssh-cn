@@ -78,8 +78,9 @@ pub fn set_language(app: AppHandle<Wry>, code: String) -> Result<String, String>
 
     #[cfg(target_os = "macos")]
     {
-        use tauri::Manager as _;
-        if let Some(menu) = crate::menu::build(&app) {
+        // Best effort: a failed rebuild keeps the current menu. `build`
+        // resolves the language itself (state, then config).
+        if let Ok(menu) = crate::menu::build(&app) {
             let _ = app.set_menu(menu);
         }
     }
