@@ -164,6 +164,11 @@ async fn persist_key(host_name: &str, key_path: &Path, write: KeyWrite) {
             host.password_auth_disabled = Some(password_disabled);
             if password_disabled {
                 host.password = None;
+                // The saved login password leaves the secret store too, not
+                // just memory: key auth supersedes it.
+                if let Some(dir) = omnyssh_core::utils::platform::app_config_dir() {
+                    omnyssh_core::secrets::delete_login_password(&dir, &name);
+                }
             }
         }
         save_hosts(&hosts).ok()

@@ -3,6 +3,7 @@ use tauri_specta::Event;
 
 use omnyssh_core::config::{load_hosts, save_hosts};
 use omnyssh_core::ssh::client::{Host, HostSource};
+use omnyssh_core::utils::platform;
 
 use crate::dto::{check_forwards, HostDto, HostInputDto};
 use crate::error::CommandError;
@@ -69,6 +70,10 @@ pub async fn reload_hosts(app: AppHandle, state: State<'_, GuiState>) -> Result<
 /// is still never written. The frontend calls `reload_hosts` afterwards to refresh the
 /// merged cache + restart the pollers. Secrets stay backend-side (§3.4): the payload's
 /// password/identity never left the backend.
+///
+/// A non-empty password in the payload goes to the secret store (`login/{name}`),
+/// never to hosts.toml; an empty/absent one leaves whatever is saved untouched
+/// (the edit form seeds blank, "blank = unchanged").
 #[tauri::command]
 #[specta::specta]
 pub async fn save_host(
@@ -82,15 +87,80 @@ pub async fn save_host(
     let imported = state
         .host_by_name(&input.name)
         .filter(|h| h.source == HostSource::SshConfig);
+    // A provided password lands in the secret store before the host itself is
+    // persisted: if the store refuses it the command fails and nothing looks
+    // saved. No password in the payload means "unchanged", so the store is not
+    // touched here (clearing is `set_host_secret(None)`).
+    if let Some(password) = input.password.clone().filter(|p| !p.is_empty()) {
+        let host_name = input.name.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let dir = platform::app_config_dir()
+                .ok_or_else(|| CommandError::plain("cannot determine the app config directory"))?;
+            omnyssh_core::secrets::save_login_password(&dir, &host_name, &password)
+                .map_err(CommandError::plain)
+        })
+        .await
+        .map_err(|e| CommandError::coded("taskFailed", format!("secret save task failed: {e}")))??;
+    }
+    // A pin the payload carries must point at an entry that exists, so a
+    // deleted key or identity cannot leave hosts.toml with a dangling id
+    // (§四.4 of the identity-keychain plan). Omitted (`None`) and cleared
+    // (`Some("")`) pins need no lookup.
+    let (key_ref, identity_ref) = (input.key_id.clone(), input.identity_id.clone());
+    if key_ref.as_deref().is_some_and(|k| !k.is_empty())
+        || identity_ref.as_deref().is_some_and(|i| !i.is_empty())
+    {
+        tauri::async_runtime::spawn_blocking(move || check_references(&key_ref, &identity_ref))
+            .await
+            .map_err(|e| CommandError::coded("taskFailed", format!("reference check task failed: {e}")))??
+    }
     persist(move |hosts| upsert(hosts, input, imported)).await
+}
+
+/// Rejects a payload whose pins reference entries `identities.toml` does not
+/// have, with a coded error the frontend translates (`credentials.*NotFound`).
+fn check_references(
+    key_id: &Option<String>,
+    identity_id: &Option<String>,
+) -> Result<(), CommandError> {
+    let file = omnyssh_core::config::identities::load_identities().unwrap_or_default();
+    if let Some(id) = key_id.as_deref().filter(|k| !k.is_empty()) {
+        if !file.keys.iter().any(|k| k.id == id) {
+            return Err(CommandError::with_params(
+                "credentials.keyEntryNotFound",
+                format!("no key entry {id}"),
+                [("id", id)],
+            ));
+        }
+    }
+    if let Some(id) = identity_id.as_deref().filter(|i| !i.is_empty()) {
+        if !file.identities.iter().any(|i| i.id == id) {
+            return Err(CommandError::with_params(
+                "credentials.identityNotFound",
+                format!("no identity {id}"),
+                [("id", id)],
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Delete a manual host by name and persist (tech-gui.md §4.2, Stage 4.1). Only manual
 /// entries live in `hosts.toml`, so an SSH-config name — or a missing one — is a no-op
-/// success: the desired end state (absent) already holds.
+/// success: the desired end state (absent) already holds. The host's saved login
+/// password, if any, is cleared from the secret store best effort (a cleanup failure
+/// warns, it does not fail the delete).
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_host(name: String) -> Result<(), CommandError> {
+    let secret_name = name.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Some(dir) = platform::app_config_dir() {
+            omnyssh_core::secrets::delete_login_password(&dir, &secret_name);
+        }
+    })
+    .await
+    .map_err(|e| CommandError::coded("taskFailed", format!("secret cleanup task failed: {e}")))?;
     persist(move |hosts| remove(hosts, &name)).await
 }
 
@@ -101,10 +171,15 @@ pub async fn delete_host(name: String) -> Result<(), CommandError> {
 /// SSH-config rename origin, `IdentitiesOnly`, and a monitoring mode the payload
 /// left out. Editing e.g. notes therefore never drops a stored secret or a recorded
 /// key setup. A provided secret still overwrites the old one.
-fn upsert(hosts: &mut Vec<Host>, input: HostInputDto, imported: Option<Host>) {
+fn upsert(hosts: &mut Vec<Host>, mut input: HostInputDto, imported: Option<Host>) {
     // An omitted monitoring mode means "unchanged", not "back to SSH" — losing it
     // would silently start logging in to a device chosen for reachability only.
     let monitoring_given = input.monitoring.is_some();
+    // Keychain/identity pins are three-valued: `None` = the edit form cannot
+    // observe them (the outbound DTO shows ids, but forms built before that do
+    // not send them back), so keep the stored ones; `Some` replaces or clears.
+    let key_pin = input.key_id.take();
+    let identity_pin = input.identity_id.take();
     let mut host = Host::from(input);
     match hosts.iter().position(|h| h.name == host.name) {
         Some(i) => {
@@ -118,6 +193,8 @@ fn upsert(hosts: &mut Vec<Host>, input: HostInputDto, imported: Option<Host>) {
                 .identity_file
                 .or_else(|| existing.identity_file.clone());
             host.proxy_jump = host.proxy_jump.or_else(|| existing.proxy_jump.clone());
+            host.key_id = key_pin.unwrap_or_else(|| existing.key_id.clone());
+            host.identity_id = identity_pin.unwrap_or_else(|| existing.identity_id.clone());
             host.identities_only = existing.identities_only;
             host.key_setup_date = existing.key_setup_date.clone();
             host.password_auth_disabled = existing.password_auth_disabled;
@@ -125,6 +202,10 @@ fn upsert(hosts: &mut Vec<Host>, input: HostInputDto, imported: Option<Host>) {
             hosts[i] = host;
         }
         None => {
+            // A brand-new host pins straight from the payload (`take()` already
+            // emptied the DTO the conversion saw).
+            host.key_id = key_pin.unwrap_or_default();
+            host.identity_id = identity_pin.unwrap_or_default();
             // A brand-new host, or the first save of an SSH-config import — only the
             // import has anything to salvage. The form never saw its `ProxyJump` or
             // identity file, and a copy without the bastion would dial the target
@@ -180,6 +261,8 @@ mod tests {
             identity_file: None,
             password: None,
             proxy_jump: None,
+            key_id: None,
+            identity_id: None,
             tags: vec![],
             notes: None,
             monitoring: None,
@@ -349,6 +432,50 @@ mod tests {
         edit.password = Some("rotated".to_string());
         upsert(&mut hosts, edit, None);
         assert_eq!(hosts[0].password.as_deref(), Some("rotated"));
+    }
+
+    #[test]
+    fn upsert_preserves_pins_the_payload_left_out() {
+        // The credentials page owns the pins; a plain edit form that sends no
+        // pin must never drop the host's keychain/identity references.
+        let mut hosts = vec![Host {
+            name: "web".to_string(),
+            key_id: "key-1".to_string(),
+            identity_id: "id-1".to_string(),
+            source: HostSource::Manual,
+            ..Host::default()
+        }];
+        upsert(&mut hosts, input("web"), None);
+        assert_eq!(hosts[0].key_id, "key-1");
+        assert_eq!(hosts[0].identity_id, "id-1");
+    }
+
+    #[test]
+    fn upsert_applies_and_clears_pins_the_payload_carries() {
+        let mut hosts = vec![Host {
+            name: "web".to_string(),
+            key_id: "key-1".to_string(),
+            identity_id: "id-1".to_string(),
+            source: HostSource::Manual,
+            ..Host::default()
+        }];
+        // `Some("")` clears, `Some(id)` replaces.
+        let mut edit = input("web");
+        edit.key_id = Some(String::new());
+        edit.identity_id = Some("id-2".to_string());
+        upsert(&mut hosts, edit, None);
+        assert_eq!(hosts[0].key_id, "");
+        assert_eq!(hosts[0].identity_id, "id-2");
+    }
+
+    #[test]
+    fn upsert_pins_a_brand_new_host_from_the_payload() {
+        let mut hosts = vec![];
+        let mut fresh = input("web");
+        fresh.key_id = Some("key-1".to_string());
+        upsert(&mut hosts, fresh, None);
+        assert_eq!(hosts[0].key_id, "key-1");
+        assert_eq!(hosts[0].identity_id, "");
     }
 
     #[test]

@@ -68,6 +68,12 @@ pub struct HostDto {
     pub notes: Option<String>,
     pub source: HostSourceDto,
     pub has_key: bool,
+    /// The keychain key entry / identity this host pins (`""` = none). Ids
+    /// only — the material itself stays in the secret store (§3.4).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub key_id: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub identity_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub password_auth_disabled: Option<bool>,
     pub monitoring: MonitorModeDto,
@@ -122,6 +128,14 @@ pub struct HostInputDto {
     pub password: Option<String>,
     #[serde(default)]
     pub proxy_jump: Option<String>,
+    /// Reference updates, three-valued (i18n plan: the credentials page owns
+    /// them): `None` = unchanged (the edit form cannot observe the current
+    /// value), `Some("")` = clear, `Some(id)` = pin that entry — which must
+    /// exist, or `save_host` refuses with a coded error.
+    #[serde(default)]
+    pub key_id: Option<String>,
+    #[serde(default)]
+    pub identity_id: Option<String>,
     // `tags[]` is required on the wire (tech-gui.md §4.1); the form always sends an
     // array, so no `serde(default)` — that would emit an optional `tags?` and drift.
     pub tags: Vec<String>,
@@ -134,6 +148,53 @@ pub struct HostInputDto {
     pub local_forwards: Vec<LocalForwardDto>,
     pub tunnel_autostart: bool,
     pub forward_agent: bool,
+}
+
+/// A keychain key entry as the credentials page sees it (identity-keychain
+/// plan §六): metadata only — the PEM and its passphrase never cross the
+/// boundary. `refCount` is how many hosts + identities pin it; the frontend
+/// renders the "in use" badge and refuses deletion with it, no second pass.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyEntryDto {
+    pub id: String,
+    pub label: String,
+    /// OpenSSH `SHA256:...`, derived at import time.
+    pub fingerprint: String,
+    /// The public half, copyable into a server's `authorized_keys`.
+    pub public_key: String,
+    /// Unix seconds.
+    pub created_at: u64,
+    pub ref_count: usize,
+}
+
+/// A reusable login identity as the credentials page sees it: username plus
+/// auth-method reference, no password material. `refCount` counts the hosts
+/// pinning it.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct IdentityDto {
+    pub id: String,
+    pub label: String,
+    pub username: String,
+    /// The pinned key entry, `""` = password auth.
+    pub key_id: String,
+    pub created_at: u64,
+    pub ref_count: usize,
+}
+
+/// A private key file read off disk for import (identity-keychain plan §六):
+/// the PEM content the save command will store, plus what was learned from
+/// it. `encrypted` tells the form whether to ask for a passphrase; `error`
+/// carries the rejection (a `.pub`, an oversized file, not a PEM) and then
+/// `pem` is empty.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivateKeyFileDto {
+    pub pem: String,
+    pub encrypted: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// What this desktop allows the tray (tech-gui.md §4.2 `set_tray_behavior`): an icon
@@ -344,6 +405,8 @@ impl From<&Host> for HostDto {
             notes: host.notes.clone(),
             source: (&host.source).into(),
             has_key: host.identity_file.is_some(),
+            key_id: host.key_id.clone(),
+            identity_id: host.identity_id.clone(),
             password_auth_disabled: host.password_auth_disabled,
             monitoring: host.monitoring.into(),
             monitor_port: host.monitor_port,
@@ -431,6 +494,10 @@ impl From<HostInputDto> for Host {
             user: dto.user,
             port: dto.port,
             identity_file: non_empty(dto.identity_file),
+            // Three-valued on the wire; `save_host`'s upsert applies the
+            // "unchanged" case against the stored host.
+            key_id: dto.key_id.unwrap_or_default(),
+            identity_id: dto.identity_id.unwrap_or_default(),
             // Read from `~/.ssh/config` only; `save_host` carries it over.
             identities_only: false,
             password: non_empty(dto.password),
@@ -718,6 +785,8 @@ mod tests {
             identity_file: Some("/home/me/.ssh/id_ed25519".to_string()),
             password: Some("s3cr3t-p4ss".to_string()),
             proxy_jump: Some("bastion".to_string()),
+            key_id: None,
+            identity_id: None,
             tags: vec!["prod".to_string()],
             notes: Some("primary".to_string()),
             monitoring: None,
@@ -774,6 +843,8 @@ mod tests {
             identity_file: Some(String::new()),
             password: Some(String::new()),
             proxy_jump: Some(String::new()),
+            key_id: None,
+            identity_id: None,
             tags: vec![],
             notes: Some(String::new()),
             monitoring: None,

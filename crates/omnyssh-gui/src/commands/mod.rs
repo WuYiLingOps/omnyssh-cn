@@ -3,8 +3,10 @@
 
 pub mod auth;
 pub mod hosts;
+pub mod identities;
 pub mod keysetup;
 pub mod sftp;
+pub mod secrets;
 pub mod snippets;
 pub mod terminal;
 pub mod tray;
