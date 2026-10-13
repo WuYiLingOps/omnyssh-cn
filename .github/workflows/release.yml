@@ -286,6 +286,11 @@ jobs:
         env:
           # Run the AppImage tooling without FUSE, which CI runners lack.
           APPIMAGE_EXTRACT_AND_RUN: 1
+          # Vite bakes the GitHub OAuth App client id into the frontend at build
+          # time (static import.meta.env substitution — the bundle has no runtime
+          # env to read), so without this the installers ship a sync feature
+          # whose Connect-GitHub always fails with "missing client_id".
+          VITE_SYNC_GITHUB_CLIENT_ID: ${{ secrets.VITE_SYNC_GITHUB_CLIENT_ID }}
         run: tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
 
       # Rename each produced bundle to its public release name (matches the README
