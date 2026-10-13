@@ -173,7 +173,11 @@ pub async fn sync_apply_identities(
                     label: key.label.clone(),
                     fingerprint: key.key_fp.clone(),
                     public_key: key.public_key.clone(),
-                    created_at: if key.created_at > 0 { key.created_at } else { now_secs() },
+                    created_at: if key.created_at > 0 {
+                        key.created_at
+                    } else {
+                        now_secs()
+                    },
                 },
             };
             // Materials only when the payload carries them; otherwise whatever
@@ -189,7 +193,11 @@ pub async fn sync_apply_identities(
                     _ => secrets::delete_key_passphrase(&dir, &entry.id),
                 }
             }
-            match file.keys.iter_mut().find(|k| k.fingerprint == entry.fingerprint) {
+            match file
+                .keys
+                .iter_mut()
+                .find(|k| k.fingerprint == entry.fingerprint)
+            {
                 Some(slot) => *slot = entry,
                 None => file.keys.push(entry),
             }
@@ -221,7 +229,11 @@ pub async fn sync_apply_identities(
                     label: identity.label.clone(),
                     username: identity.username.clone(),
                     key_id,
-                    created_at: if identity.created_at > 0 { identity.created_at } else { now_secs() },
+                    created_at: if identity.created_at > 0 {
+                        identity.created_at
+                    } else {
+                        now_secs()
+                    },
                 },
             };
             if let Some(p) = &identity.password {
@@ -230,11 +242,7 @@ pub async fn sync_apply_identities(
                         .map_err(CommandError::plain)?;
                 }
             }
-            match file
-                .identities
-                .iter_mut()
-                .find(|i| i.label == entry.label)
-            {
+            match file.identities.iter_mut().find(|i| i.label == entry.label) {
                 Some(slot) => *slot = entry,
                 None => file.identities.push(entry),
             }
