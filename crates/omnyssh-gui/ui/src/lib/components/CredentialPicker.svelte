@@ -25,9 +25,33 @@
 
   let open = $state(false);
   let root = $state<HTMLDivElement>();
+  let trigger = $state<HTMLButtonElement>();
   let listEl = $state<HTMLDivElement>();
   // Highlight index into `flat` (the selectable rows); -1 = nothing highlighted.
   let highlighted = $state(-1);
+  // The list is `position: fixed` (a plain absolute child would be clipped by the
+  // host form's `overflow-y-auto` scroll container — inside the host editor modal
+  // the dropdown towards the bottom of the form never showed). Positioned from the
+  // trigger's viewport rect each open; `upward` flips it when there is no room
+  // below (mirrors `ContextMenu.svelte`'s edge handling).
+  let listStyle = $state<{ left: string; top: string; width: string }>({
+    left: '0px',
+    top: '0px',
+    width: '0px'
+  });
+  let upward = $state(false);
+
+  function placeList(): void {
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    upward = spaceBelow < 176 && rect.top > spaceBelow; // ~4 rows
+    listStyle = {
+      left: `${rect.left}px`,
+      top: upward ? `${Math.max(4, rect.top - 4)}px` : `${rect.bottom + 4}px`,
+      width: `${rect.width}px`
+    };
+  }
 
   const current = $derived(options.find((o) => o.value === value) ?? options[0]);
   const flat = $derived<CredentialRow[]>(options.map((o, index) => ({ o, index })));
@@ -54,6 +78,7 @@
   }
 
   function openList(): void {
+    placeList();
     open = true;
     // Start on the selected row so Enter is a no-op and ↑↓ move from here.
     highlighted = flat.findIndex(({ o }) => o.value === value);
@@ -109,15 +134,21 @@
   }
 
   // Click-outside closes; capture phase keeps the press from landing underneath.
+  // A scroll or resize would leave the fixed list floating away from its trigger,
+  // so it closes too — the modal's own scroll is the common case here.
   function onWindowPointerdown(e: PointerEvent): void {
     if (open && root && !root.contains(e.target as Node)) close();
   }
+  function onReflow(): void {
+    if (open) close();
+  }
 </script>
 
-<svelte:window onpointerdown={onWindowPointerdown} />
+<svelte:window onpointerdown={onWindowPointerdown} onscroll={onReflow} onresize={onReflow} />
 
 <div bind:this={root} class="relative" role="group" aria-label={label}>
   <button
+    bind:this={trigger}
     type="button"
     role="combobox"
     aria-controls="credential-list"
@@ -141,8 +172,10 @@
       aria-label={label}
       tabindex="-1"
       onkeydown={onKeydown}
-      class="absolute left-0 right-0 top-[calc(100%+0.25rem)] z-50 max-h-64 overflow-y-auto rounded-xl
-        border border-default bg-surface py-1.5 shadow-soft"
+      class="fixed z-50 max-h-64 overflow-y-auto rounded-xl border border-default bg-surface py-1.5 shadow-soft"
+      style="left: {listStyle.left}; top: {listStyle.top}; width: {listStyle.width}; transform: {upward
+        ? 'translateY(-100%)'
+        : 'none'};"
     >
       {#each groups as group (group.name)}
         {#if group.name !== null}

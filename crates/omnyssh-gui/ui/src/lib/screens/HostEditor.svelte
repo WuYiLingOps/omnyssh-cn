@@ -552,11 +552,18 @@
         <!-- The button stays static while testing (disabled only): swapping a
              spinner into it changes its width and shifts the footer, and a
              second spinner beside it was one animation too many. -->
-        <Button variant="ghost" disabled={testing || saving} onclick={() => void testConnection()}>
+        <Button
+          variant="ghost"
+          class="shrink-0 whitespace-nowrap"
+          disabled={testing || saving}
+          onclick={() => void testConnection()}
+        >
           {$t('hostEditor.testConnection')}
         </Button>
         <!-- One subtle indicator: a small spinner + label while the dial is in
-             flight, then the graded result in the same spot. -->
+             flight, then the graded result in the same spot. The failure badge
+             stays to its short label — the engine's full text lives in the
+             tooltip (and the toast), so the footer buttons never wrap. -->
         {#if testing}
           <span class="flex items-center gap-1.5 text-xs text-faint">
             <Icon name="refresh" size={12} class="animate-spin" />
@@ -577,12 +584,12 @@
               title={testResult.text}
             >
               <StatusDot status="crit" size={7} />
-              <span class="truncate">{$t('hostEditor.testUnreachable')} · {testResult.text}</span>
+              <span class="truncate">{$t('hostEditor.testUnreachable')}</span>
             </span>
           {/if}
         {/if}
       </div>
-      <div class="flex gap-2">
+      <div class="flex shrink-0 gap-2">
         <Button variant="ghost" onclick={onCancel}>{$t('hostEditor.cancel')}</Button>
         <Button variant="primary" type="submit" disabled={saving}>
           {mode === 'add' ? $t('hostEditor.addTitle') : $t('hostEditor.save')}

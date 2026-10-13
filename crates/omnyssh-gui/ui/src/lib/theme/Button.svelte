@@ -10,6 +10,7 @@
     type = 'button',
     disabled = false,
     title,
+    class: cls = '',
     onclick,
     children
   }: {
@@ -17,6 +18,8 @@
     type?: 'button' | 'submit';
     disabled?: boolean;
     title?: string;
+    /** Layout hooks from the parent (flex shrink, widths) — never colours. */
+    class?: string;
     onclick?: (event: MouseEvent) => void;
     children: Snippet;
   } = $props();
@@ -34,6 +37,6 @@
   };
 </script>
 
-<button {type} {title} {disabled} {onclick} aria-label={title} class="{base} {variants[variant]}">
+<button {type} {title} {disabled} {onclick} aria-label={title} class="{base} {variants[variant]} {cls}">
   {@render children()}
 </button>
