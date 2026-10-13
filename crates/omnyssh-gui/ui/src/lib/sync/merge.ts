@@ -1,5 +1,5 @@
 /**
- * Three-way merge (ported from DockPilot's sync engine, cut down to the two
+ * Three-way merge (ported from DockPilot's sync engine, extended to four
  * OmnySSH entity kinds).
  *
  * With "the last successful sync's snapshot" as base, changes are detected per
@@ -14,11 +14,19 @@
  *
  * Merge keys: hosts by **name** (hosts.toml has no id field; the upsert
  * contract keys on name), snippets by **name** too (snippets.toml likewise —
- * a rename is delete-old + save-new by contract). There are no scalar
- * settings in Phase 1, so the whole scalar-merge block is gone.
+ * a rename is delete-old + save-new by contract), keychain entries by
+ * **fingerprint** (derived from the key material, so both devices agree) and
+ * identities by **label** (what hosts' identity pins cite). There are no
+ * scalar settings in Phase 1, so the whole scalar-merge block is gone.
  */
 
-import type { SyncedHost, SyncedSnippet, SyncPayload } from "./types";
+import type {
+  SyncedHost,
+  SyncedSnippet,
+  SyncedKey,
+  SyncedIdentity,
+  SyncPayload,
+} from "./types";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -161,7 +169,7 @@ export function mergeSyncPayloads(
   local: SyncPayload,
   remote: SyncPayload,
 ): MergeResult {
-  const emptyBase: SyncPayload = { hosts: [], snippets: [], syncedAt: 0 };
+  const emptyBase: SyncPayload = { hosts: [], snippets: [], keys: [], identities: [], syncedAt: 0 };
   const b = base ?? emptyBase;
 
   // Hosts merge by name. A rename is the delete-old + add-new combination the
@@ -179,26 +187,54 @@ export function mergeSyncPayloads(
     remote.snippets ?? [],
     (s) => s.name,
   );
+  // Keys merge by fingerprint (the material-derived cross-device id); by
+  // convention the fingerprint starts with "SHA256:" so it cannot collide
+  // with a name.
+  const keys = mergeEntityArrays<SyncedKey>(
+    b.keys ?? [],
+    local.keys ?? [],
+    remote.keys ?? [],
+    (k) => k.keyFp,
+  );
+  // Identities merge by label — the same key hosts' `identityLabel` pins cite.
+  const identities = mergeEntityArrays<SyncedIdentity>(
+    b.identities ?? [],
+    local.identities ?? [],
+    remote.identities ?? [],
+    (i) => i.label,
+  );
 
   const summary: MergeSummary = {
     added: {
-      local: hosts.added.local + snippets.added.local,
-      remote: hosts.added.remote + snippets.added.remote,
+      local: hosts.added.local + snippets.added.local + keys.added.local + identities.added.local,
+      remote: hosts.added.remote + snippets.added.remote + keys.added.remote + identities.added.remote,
     },
     deleted: {
-      local: hosts.deleted.local + snippets.deleted.local,
-      remote: hosts.deleted.remote + snippets.deleted.remote,
+      local:
+        hosts.deleted.local + snippets.deleted.local + keys.deleted.local + identities.deleted.local,
+      remote:
+        hosts.deleted.remote + snippets.deleted.remote + keys.deleted.remote + identities.deleted.remote,
     },
     modified: {
-      local: hosts.modified.local + snippets.modified.local,
-      remote: hosts.modified.remote + snippets.modified.remote,
-      conflicts: hosts.conflicts + snippets.conflicts,
+      local:
+        hosts.modified.local +
+        snippets.modified.local +
+        keys.modified.local +
+        identities.modified.local,
+      remote:
+        hosts.modified.remote +
+        snippets.modified.remote +
+        keys.modified.remote +
+        identities.modified.remote,
+      conflicts: hosts.conflicts + snippets.conflicts + keys.conflicts + identities.conflicts,
     },
   };
 
   const payload: SyncPayload = {
     hosts: hosts.merged,
     snippets: snippets.merged,
+    keys: keys.merged,
+    identities: identities.merged,
     syncedAt: Date.now(),
   };
 

@@ -299,7 +299,7 @@
   "cloudSync": {
     "title": "云同步",
     "githubAccount": "GitHub 账号",
-    "connectHint": "通过一个加密的私有 Gist，在多台设备间同步手动添加的主机和命令片段。",
+    "connectHint": "通过一个加密的私有 Gist，在多台设备间同步手动添加的主机、命令片段与 SSH 凭证元数据。",
     "connect": "连接 GitHub",
     "connectTitle": "连接 GitHub",
     "openGithub": "打开 github.com/login/device",
@@ -377,7 +377,9 @@
     "toastConnectFailed": "连接 GitHub 失败：{error}",
     "toastDisconnected": "已断开 GitHub 连接",
     "toastCodeCopied": "设备码已复制",
-    "toastCodeCopyFailed": "复制失败——请手动选中设备码"
+    "toastCodeCopyFailed": "复制失败——请手动选中设备码",
+    "syncCredentials": "同步 SSH 凭证材料",
+    "syncCredentialsHint": "随载荷上传私钥 PEM、钥匙串口令与身份密码（由同步密码加密保护）。钥匙与身份的元数据始终同步，以便同步主机的密钥绑定能正常解析。默认关闭。"
   },
   "theme": {
     "toLight": "切换到浅色主题",
@@ -599,7 +601,7 @@
   },
   "credentials": {
     "title": "SSH 凭证",
-    "intro": "所有内容只保存在本机：私钥材料存于系统钥匙串，元数据写入 identities.toml。",
+    "intro": "私钥材料保存在本机系统钥匙串，元数据写入 identities.toml。元数据随「云同步」同步；私钥材料仅在开启「同步 SSH 凭证材料」后随载荷加密上传。",
     "keys": "钥匙串私钥",
     "keysEmpty": "尚未导入任何私钥。",
     "identities": "登录身份",

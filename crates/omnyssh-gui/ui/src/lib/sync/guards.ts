@@ -16,8 +16,10 @@ const BULK_SHRINK_MIN_ABSOLUTE = 2;
 const LARGE_SHRINK_ABSOLUTE = 10;
 
 /** Passwords being stripped from hosts never counts as a shrink: the guard
- *  counts entity records, and the sync-passwords switch is a user decision. */
-const CHECKED_ENTITIES: readonly SyncEntityType[] = ["hosts", "snippets"];
+ *  counts entity records, and the sync-passwords switch is a user decision.
+ *  The same holds for the credential materials on keys/identities (PEM /
+ *  passphrases / passwords) — the record count is what matters here. */
+const CHECKED_ENTITIES: readonly SyncEntityType[] = ["hosts", "snippets", "keys", "identities"];
 
 const countOf = (p: SyncPayload, key: SyncEntityType): number => {
   const v = p[key];

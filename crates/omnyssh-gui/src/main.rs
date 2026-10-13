@@ -47,6 +47,7 @@ use sync::github_sync::{
     sync_delete_github_token, sync_delete_sync_password, sync_load_github_token,
     sync_load_sync_password, sync_save_github_token, sync_save_sync_password,
 };
+use sync::identities_sync::{sync_apply_identities, sync_export_identities};
 use sync::payload::{sync_apply_hosts, sync_apply_snippets, sync_export_hosts};
 use tauri::webview::PageLoadEvent;
 use tauri::Manager;
@@ -172,7 +173,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
             sync_delete_sync_password,
             sync_export_hosts,
             sync_apply_hosts,
-            sync_apply_snippets
+            sync_apply_snippets,
+            sync_export_identities,
+            sync_apply_identities
         ])
         .events(collect_events![
             events::HostsLoaded,

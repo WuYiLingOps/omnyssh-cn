@@ -299,7 +299,7 @@
   "cloudSync": {
     "title": "Cloud Sync",
     "githubAccount": "GitHub account",
-    "connectHint": "Sync manual hosts and snippets across devices through an encrypted private Gist.",
+    "connectHint": "Sync manual hosts, snippets and SSH credential metadata across devices through an encrypted private Gist.",
     "connect": "Connect GitHub",
     "connectTitle": "Connect GitHub",
     "openGithub": "Open github.com/login/device",
@@ -377,7 +377,9 @@
     "toastConnectFailed": "GitHub connect failed: {error}",
     "toastDisconnected": "GitHub disconnected",
     "toastCodeCopied": "Device code copied",
-    "toastCodeCopyFailed": "Copy failed — select the code by hand"
+    "toastCodeCopyFailed": "Copy failed — select the code by hand",
+    "syncCredentials": "Sync SSH credential materials",
+    "syncCredentialsHint": "Uploads key PEMs, key passphrases and identity passwords with the payload (envelope-encrypted). Key and identity metadata always syncs so a synced host's key binding resolves. Off by default."
   },
   "theme": {
     "toLight": "Switch to light theme",
@@ -599,7 +601,7 @@
   },
   "credentials": {
     "title": "SSH Credentials",
-    "intro": "Everything stays on this machine: the private key material lives in the system keychain, only the metadata is written to identities.toml.",
+    "intro": "Private key material lives in this machine's system keychain; metadata is written to identities.toml. Metadata syncs through Cloud Sync; materials only when \"Sync SSH credential materials\" is on.",
     "keys": "Keychain keys",
     "keysEmpty": "No keys imported yet.",
     "identities": "Identities",

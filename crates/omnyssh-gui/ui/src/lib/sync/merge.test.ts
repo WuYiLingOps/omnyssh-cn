@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { SyncedHost, SyncPayload } from "./types";
+import type { SyncedHost, SyncedKey, SyncedIdentity, SyncPayload } from "./types";
 import { fingerprint, mergeSyncPayloads } from "./merge";
 
 const host = (name: string, hostname = `${name}.example.com`): SyncedHost => ({
@@ -17,11 +17,34 @@ const host = (name: string, hostname = `${name}.example.com`): SyncedHost => ({
   localForwards: [],
   tunnelAutostart: false,
   forwardAgent: false,
+  keyFp: '',
+  identityLabel: '',
 });
 
-const payload = (hs: SyncedHost[], snippetNames: string[] = []): SyncPayload => ({
+const key = (fp: string, label = 'key-' + fp.slice(-4)): SyncedKey => ({
+  keyFp: fp,
+  label,
+  publicKey: 'ssh-ed25519 AAA',
+  createdAt: 0,
+});
+
+const identity = (label: string, keyFp = ''): SyncedIdentity => ({
+  label,
+  username: 'root',
+  keyFp,
+  createdAt: 0,
+});
+
+const payload = (
+  hs: SyncedHost[],
+  snippetNames: string[] = [],
+  keys: SyncedKey[] = [],
+  identities: SyncedIdentity[] = [],
+): SyncPayload => ({
   hosts: hs,
   snippets: snippetNames.map((name) => ({ name, command: "uptime", scope: "global" as const })),
+  keys,
+  identities,
   syncedAt: 0,
 });
 
@@ -166,5 +189,45 @@ describe("fingerprint", () => {
   it("key order does not affect the fingerprint", () => {
     expect(fingerprint({ a: 1, b: { c: 2, d: 3 } })).toBe(fingerprint({ b: { d: 3, c: 2 }, a: 1 }));
     expect(fingerprint({ a: 1 })).not.toBe(fingerprint({ a: 2 }));
+  });
+});
+
+describe('three-way key + identity merge', () => {
+  it('keys merge by fingerprint; a local-only and a remote-only key both survive', () => {
+    const base = payload([], [], [key('fp-a')]);
+    const local = payload([], [], [key('fp-a'), key('fp-local')]);
+    const remote = payload([], [], [key('fp-a'), key('fp-remote')]);
+
+    const r = mergeSyncPayloads(base, local, remote);
+    expect(r.payload.keys.map((k) => k.keyFp).sort()).toEqual(['fp-a', 'fp-local', 'fp-remote']);
+  });
+
+  it('a key modified on one side wins; both-side modification resolves local-first', () => {
+    const base = payload([], [], [{ keyFp: 'fp', label: 'old', publicKey: 'p', createdAt: 0 }]);
+    const local = payload([], [], [{ keyFp: 'fp', label: 'local-label', publicKey: 'p', createdAt: 0 }]);
+    const remote = payload([], [], [{ keyFp: 'fp', label: 'remote-label', publicKey: 'p', createdAt: 0 }]);
+
+    const r = mergeSyncPayloads(base, local, remote);
+    expect(r.payload.keys[0].label).toBe('local-label');
+    expect(r.hadConflicts).toBe(true);
+  });
+
+  it('a key deleted locally but unchanged remotely is deleted', () => {
+    const base = payload([], [], [key('fp-a'), key('fp-b')]);
+    const local = payload([], [], [key('fp-a')]);
+    const remote = payload([], [], [key('fp-a'), key('fp-b')]);
+
+    const r = mergeSyncPayloads(base, local, remote);
+    expect(r.payload.keys.map((k) => k.keyFp)).toEqual(['fp-a']);
+  });
+
+  it('identities merge by label; binding changes propagate', () => {
+    const base = payload([], [], [], [identity('vm')]);
+    const local = payload([], [], [key('fp-1')], [{ ...identity('vm', 'fp-1') }]);
+    const remote = payload([], [], [], [identity('vm')]);
+
+    const r = mergeSyncPayloads(base, local, remote);
+    expect(r.payload.identities).toHaveLength(1);
+    expect(r.payload.identities[0].keyFp).toBe('fp-1');
   });
 });

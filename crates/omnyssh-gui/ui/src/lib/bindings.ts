@@ -754,6 +754,13 @@ async syncExportHosts(includePasswords: boolean) : Promise<Result<HostSyncDto[],
  * Applies a merged host payload: replaces the manual host list wholesale and
  * persists via the same atomic tmp+rename write every other writer uses.
  * 
+ * Identity pins: the payload's `key_fp` / `identity_label` are resolved
+ * against the local identities store (populated by `sync_apply_identities`,
+ * which the frontend runs first) and the local `key_id` / `identity_id` pins
+ * are rewritten — a host synced to a new device points at *this* device's
+ * store, never at the source device's uuids. Unresolvable pins degrade to
+ * empty (password auth), the same stance an unsynced device takes.
+ * 
  * Password handling: a non-empty incoming password is written to the secret
  * store (key `login/{name}`); an absent one leaves the locally stored
  * password untouched — the default (passwords excluded) payload can thus
@@ -786,6 +793,42 @@ async syncApplyHosts(hosts: HostSyncDto[]) : Promise<Result<null, CommandError>>
 async syncApplySnippets(snippets: SnippetDto[]) : Promise<Result<null, CommandError>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("sync_apply_snippets", { snippets }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Exports the identities file for the sync payload. Materials are backfilled
+ * from the secret store only when `include_credentials` is on; with the
+ * switch off the payload carries metadata exclusively. An unreadable
+ * identities file degrades to an empty export (a broken file must not brick
+ * sync), mirroring the credentials page.
+ */
+async syncExportIdentities(includeCredentials: boolean) : Promise<Result<[KeySyncDto[], IdentitySyncDto[]], CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("sync_export_identities", { includeCredentials }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Applies a merged identity payload. Key entries are matched by fingerprint —
+ * the same key already on this device is updated in place, never duplicated;
+ * a new one gets a fresh uuid. Identities are matched by label (their uuid is
+ * per-device too, and the label is what hosts' `identity_label` pins cite);
+ * a local identity the payload does not mention stays untouched.
+ * 
+ * With credentials present, materials are stored before the metadata file is
+ * written, so a store refusal fails the command before any state changes (the
+ * ordering `sync_apply_hosts` uses). Without them, an existing entry's
+ * material is left exactly as it is — a metadata-only payload can never wipe
+ * a device's stored key.
+ */
+async syncApplyIdentities(keys: KeySyncDto[], identitiesPayload: IdentitySyncDto[]) : Promise<Result<null, CommandError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("sync_apply_identities", { keys, identitiesPayload }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -954,7 +997,16 @@ password?: string | null; proxyJump?: string | null;
  * each device's secret store, so a synced pin resolves against the local
  * `identities.toml` (cloud sync-ready, as with dockpilot's key ids).
  */
-keyId: string; identityId: string; tags?: string[]; notes?: string | null; 
+keyId: string; identityId: string; 
+/**
+ * Portable stand-ins for the pins above: the bound key entry's
+ * fingerprint (both devices derive it from the same material) and the
+ * bound identity's label. Export fills them from the local pins; apply
+ * resolves them back to the local ids and rewrites `key_id`/`identity_id`
+ * — so a host synced to a new device points at *its* store, not at
+ * dangling uuids.
+ */
+keyFp: string; identityLabel: string; tags?: string[]; notes?: string | null; 
 /**
  * Manual entries only ever travel the wire (SSH-config imports are
  * re-derived locally on every device and never synced).
@@ -975,6 +1027,19 @@ export type IdentityDto = { id: string; label: string; username: string;
  * The pinned key entry, `""` = password auth.
  */
 keyId: string; createdAt: number; refCount: number }
+/**
+ * A login identity as the payload carries it. `keyFp` is empty for password
+ * auth; the password is present only under the sync-credentials switch.
+ */
+export type IdentitySyncDto = { label: string; username: string; 
+/**
+ * Fingerprint of the bound key entry; empty = password auth.
+ */
+keyFp?: string; 
+/**
+ * Identity password — same opt-in as the key materials.
+ */
+password?: string | null; createdAt?: number }
 /**
  * A keychain key entry as the credentials page sees it (identity-keychain
  * plan §六): metadata only — the PEM and its passphrase never cross the
@@ -1038,6 +1103,19 @@ code: string;
  * The core's label, localized to the resolved UI language.
  */
 description: string }
+/**
+ * A keychain key entry as the payload carries it. `keyFp` replaces the local
+ * `id` as the cross-device identity.
+ */
+export type KeySyncDto = { keyFp: string; label?: string; publicKey?: string; 
+/**
+ * PEM material — present only when the sync-credentials switch is on.
+ */
+pem?: string | null; 
+/**
+ * Key passphrase for an encrypted PEM — same opt-in as `pem`.
+ */
+passphrase?: string | null; createdAt?: number }
 /**
  * One `ssh -L` rule (tech-gui.md §4.1): listen on `bindAddress:bindPort` here and
  * reach `remoteHost:remotePort` as the host resolves it. No `bindAddress` means the

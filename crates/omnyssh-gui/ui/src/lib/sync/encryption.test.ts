@@ -21,6 +21,8 @@ const makePayload = (): SyncPayload => ({
       identitiesOnly: false,
       keyId: '',
       identityId: '',
+      keyFp: '',
+      identityLabel: '',
       monitoring: "ssh" as const,
       localForwards: [],
       tunnelAutostart: false,
@@ -36,6 +38,8 @@ const makePayload = (): SyncPayload => ({
       identitiesOnly: true,
       keyId: '',
       identityId: '',
+      keyFp: '',
+      identityLabel: '',
       monitoring: "ssh" as const,
       identityFile: "~/.ssh/id_ed25519",
       localForwards: [],
@@ -44,6 +48,8 @@ const makePayload = (): SyncPayload => ({
     },
   ],
   snippets: [{ name: "uptime", command: "uptime", scope: "global" }],
+  keys: [],
+  identities: [],
   syncedAt: 12345,
 });
 

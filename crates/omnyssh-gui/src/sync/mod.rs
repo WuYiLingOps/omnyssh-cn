@@ -1,6 +1,6 @@
-//! GitHub Gist cloud sync. The engine lives in the frontend; Phase 1 syncs
-//! manual hosts + snippets, with the TUI sharing the benefit through
-//! hosts.toml.
+//! GitHub Gist cloud sync. The engine lives in the frontend; it syncs manual
+//! hosts + snippets + identity metadata, with the TUI sharing the benefit
+//! through hosts.toml.
 //!
 //! The sync engine itself lives in the frontend (`ui/src/lib/sync/`); this
 //! module is the Rust bridge it needs:
@@ -15,4 +15,5 @@
 //!   included only when the user opts in.
 
 pub mod github_sync;
+pub mod identities_sync;
 pub mod payload;

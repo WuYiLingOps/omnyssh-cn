@@ -14,6 +14,8 @@ const hosts = (n: number): SyncedHost[] =>
     identitiesOnly: false,
     keyId: '',
     identityId: '',
+  keyFp: '',
+  identityLabel: '',
     monitoring: "ssh" as const,
     localForwards: [],
     tunnelAutostart: false,
@@ -23,6 +25,8 @@ const hosts = (n: number): SyncedHost[] =>
 const payload = (hs: SyncedHost[], snippets: Array<{ name: string }> = []): SyncPayload => ({
   hosts: hs,
   snippets: snippets.map((s) => ({ name: s.name, command: "uptime", scope: "global" as const })),
+  keys: [],
+  identities: [],
   syncedAt: 0,
 });
 

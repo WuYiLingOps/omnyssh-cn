@@ -3526,6 +3526,7 @@ dependencies = [
  "tauri-specta",
  "tokio",
  "tracing",
+ "uuid",
  "webkit2gtk",
  "x11-dl",
  "zbus",

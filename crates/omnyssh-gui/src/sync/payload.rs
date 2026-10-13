@@ -52,6 +52,16 @@ pub struct HostSyncDto {
     pub key_id: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub identity_id: String,
+    /// Portable stand-ins for the pins above: the bound key entry's
+    /// fingerprint (both devices derive it from the same material) and the
+    /// bound identity's label. Export fills them from the local pins; apply
+    /// resolves them back to the local ids and rewrites `key_id`/`identity_id`
+    /// — so a host synced to a new device points at *its* store, not at
+    /// dangling uuids.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub key_fp: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub identity_label: String,
     #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -89,6 +99,8 @@ impl From<&Host> for HostSyncDto {
             proxy_jump: h.proxy_jump.clone(),
             key_id: h.key_id.clone(),
             identity_id: h.identity_id.clone(),
+            key_fp: String::new(),
+            identity_label: String::new(),
             tags: h.tags.clone(),
             notes: h.notes.clone(),
             source: HostSourceDto::from(&h.source),
@@ -154,6 +166,9 @@ impl HostSyncDto {
 pub async fn sync_export_hosts(include_passwords: bool) -> Result<Vec<HostSyncDto>, CommandError> {
     tauri::async_runtime::spawn_blocking(move || {
         let hosts = load_hosts().map_err(|e| CommandError::plain(e.to_string()))?;
+        // Identity metadata for the pin translation; an unreadable file
+        // degrades to empty pins, mirroring the credentials page.
+        let identities = omnyssh_core::config::identities::load_identities().unwrap_or_default();
         Ok(hosts
             .iter()
             .filter(|h| h.source == HostSource::Manual)
@@ -161,6 +176,12 @@ pub async fn sync_export_hosts(include_passwords: bool) -> Result<Vec<HostSyncDt
                 let mut dto = HostSyncDto::from(h);
                 if !include_passwords {
                     dto.password = None;
+                }
+                if let Some(key) = identities.keys.iter().find(|k| k.id == h.key_id) {
+                    dto.key_fp = key.fingerprint.clone();
+                }
+                if let Some(ident) = identities.identities.iter().find(|i| i.id == h.identity_id) {
+                    dto.identity_label = ident.label.clone();
                 }
                 dto
             })
@@ -172,6 +193,13 @@ pub async fn sync_export_hosts(include_passwords: bool) -> Result<Vec<HostSyncDt
 
 /// Applies a merged host payload: replaces the manual host list wholesale and
 /// persists via the same atomic tmp+rename write every other writer uses.
+///
+/// Identity pins: the payload's `key_fp` / `identity_label` are resolved
+/// against the local identities store (populated by `sync_apply_identities`,
+/// which the frontend runs first) and the local `key_id` / `identity_id` pins
+/// are rewritten — a host synced to a new device points at *this* device's
+/// store, never at the source device's uuids. Unresolvable pins degrade to
+/// empty (password auth), the same stance an unsynced device takes.
 ///
 /// Password handling: a non-empty incoming password is written to the secret
 /// store (key `login/{name}`); an absent one leaves the locally stored
@@ -213,7 +241,43 @@ pub async fn sync_apply_hosts(hosts: Vec<HostSyncDto>) -> Result<(), CommandErro
                     .map_err(CommandError::plain)?;
             }
         }
-        let converted: Vec<Host> = hosts.iter().map(|h| h.clone().into_host()).collect();
+        // Resolve the portable pins against the local identity graph.
+        let identities = omnyssh_core::config::identities::load_identities().unwrap_or_default();
+        let resolve_key = |fp: &str| {
+            if fp.is_empty() {
+                String::new()
+            } else {
+                identities
+                    .keys
+                    .iter()
+                    .find(|k| k.fingerprint == fp)
+                    .map(|k| k.id.clone())
+                    .unwrap_or_default()
+            }
+        };
+        let resolve_identity = |label: &str| {
+            if label.is_empty() {
+                String::new()
+            } else {
+                identities
+                    .identities
+                    .iter()
+                    .find(|i| i.label == label)
+                    .map(|i| i.id.clone())
+                    .unwrap_or_default()
+            }
+        };
+        let converted: Vec<Host> = hosts
+            .iter()
+            .map(|h| {
+                let mut host = h.clone().into_host();
+                if !h.key_fp.is_empty() || !h.identity_label.is_empty() {
+                    host.key_id = resolve_key(&h.key_fp);
+                    host.identity_id = resolve_identity(&h.identity_label);
+                }
+                host
+            })
+            .collect();
         save_hosts(&converted).map_err(|e| CommandError::plain(e.to_string()))?;
         let incoming: std::collections::HashSet<&str> =
             hosts.iter().map(|h| h.name.as_str()).collect();
@@ -261,6 +325,8 @@ mod tests {
             proxy_jump: Some("bastion".to_string()),
             key_id: String::new(),
             identity_id: String::new(),
+            key_fp: String::new(),
+            identity_label: String::new(),
             tags: vec!["web".to_string()],
             notes: None,
             source: HostSourceDto::Manual,

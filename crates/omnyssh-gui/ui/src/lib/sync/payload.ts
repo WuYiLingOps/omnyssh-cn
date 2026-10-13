@@ -1,14 +1,16 @@
 /**
  * Sync payload build and apply.
  *
- * buildSyncPayload: hosts come from the Rust `sync_export_hosts` (manual
- * entries only; passwords included only when the user's `syncPasswords`
- * switch is on), snippets from `list_snippets`.
+ * buildSyncPayload: hosts from the Rust `sync_export_hosts` (manual entries
+ * only; passwords included only when the user's `syncPasswords` switch is on),
+ * snippets from `list_snippets`, identity metadata from `sync_export_identities`
+ * (materials included only when `syncCredentials` is on).
  *
- * applySyncPayload: `sync_apply_hosts` (atomic hosts.toml write, passwords
- * into the secret store) → `sync_apply_snippets` (atomic snippets.toml write)
- * → `reload_hosts` (refresh cache/pollers/tunnels + broadcast hosts-loaded).
- * Order matters: apply, then reload, so one event carries the final state.
+ * applySyncPayload: `sync_apply_identities` first (so hosts' key pins can
+ * resolve against the freshly landed identity graph) → `sync_apply_hosts`
+ * (atomic hosts.toml write, passwords into the secret store, pins translated)
+ * → `sync_apply_snippets` → `reload_hosts`. Order matters: identities before
+ * hosts, apply, then reload, so one event carries the final state.
  */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -20,17 +22,28 @@ import type { SyncPayload } from "./types";
 
 /**
  * Builds the local upload payload. `includePasswords` mirrors the
- * `syncPasswords` switch: when on, login passwords ride the payload (the sync
- * password's envelope encryption protects them one layer up); when off, the
- * payload carries no secrets at all and the peer device prompts for passwords
- * as usual.
+ * `syncPasswords` switch; `includeCredentials` mirrors `syncCredentials` —
+ * both gate secret materials only, identity metadata always rides the payload.
  */
-export async function buildSyncPayload(includePasswords: boolean): Promise<SyncPayload> {
-  const [hosts, snippets] = await Promise.all([
+export async function buildSyncPayload(
+  includePasswords: boolean,
+  includeCredentials: boolean,
+): Promise<SyncPayload> {
+  const [hosts, snippets, identities] = await Promise.all([
     invoke<HostSyncDto[]>("sync_export_hosts", { includePasswords }),
     listSnippets(),
+    invoke<{ 0: import("$lib/bindings").KeySyncDto[]; 1: import("$lib/bindings").IdentitySyncDto[] }>(
+      "sync_export_identities",
+      { includeCredentials },
+    ),
   ]);
-  return { hosts, snippets, syncedAt: Date.now() };
+  return {
+    hosts,
+    snippets,
+    keys: identities[0],
+    identities: identities[1],
+    syncedAt: Date.now(),
+  };
 }
 
 /**
@@ -39,6 +52,10 @@ export async function buildSyncPayload(includePasswords: boolean): Promise<SyncP
  * `reloadHosts` also restarts the pollers and brings the tunnels in line.
  */
 export async function applySyncPayload(payload: SyncPayload): Promise<void> {
+  await invoke("sync_apply_identities", {
+    keys: payload.keys,
+    identitiesPayload: payload.identities,
+  });
   await invoke("sync_apply_hosts", { hosts: payload.hosts });
   await invoke("sync_apply_snippets", { snippets: payload.snippets });
   await reloadHosts();

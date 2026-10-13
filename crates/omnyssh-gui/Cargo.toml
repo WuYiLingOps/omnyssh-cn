@@ -42,6 +42,9 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 # Timestamps the key-setup completion write onto the host, matching the TUI's
 # `key_setup_date` so both frontends round-trip the same shared hosts.toml (§4.2).
 chrono = { workspace = true }
+# Identity-sync apply: new key entries / identities landed by the cloud payload
+# get a local uuid, same as the CRUD path in omnyssh-core.
+uuid = { workspace = true }
 # tauri-specta v2 + specta v2 are release candidates (tech-gui.md §3.3): pin exact
 # rc versions. rc.21 is the last combo docs.rs builds; upgrades need re-verification.
 specta = { version = "=2.0.0-rc.22", features = ["derive", "function"] }

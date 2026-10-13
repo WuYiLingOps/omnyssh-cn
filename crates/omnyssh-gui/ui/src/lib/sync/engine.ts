@@ -76,6 +76,9 @@ export interface CloudSyncState {
   autoSync: boolean;
   /** Whether the payload carries login passwords (mirrors the persisted switch). */
   syncPasswords: boolean;
+  /** Whether the payload carries SSH credential materials (PEM / passphrases /
+   *  identity passwords; mirrors the persisted switch). */
+  syncCredentials: boolean;
   tokenBackend: TokenBackend | null;
   gistId: string | null;
   lastSyncAt: number | null;
@@ -102,6 +105,7 @@ const initialState: CloudSyncState = {
   account: null,
   autoSync: true,
   syncPasswords: false,
+  syncCredentials: false,
   tokenBackend: null,
   gistId: null,
   lastSyncAt: null,
@@ -251,6 +255,7 @@ export async function initialize(): Promise<void> {
   const config = loadConfig();
   state.autoSync = config.autoSync;
   state.syncPasswords = config.syncPasswords;
+  state.syncCredentials = config.syncCredentials;
   state.gistId = config.gistId;
   state.tokenBackend = config.tokenBackend;
   state.account = config.account;
@@ -492,8 +497,19 @@ export function setSyncPasswords(enabled: boolean): void {
   notify();
 }
 
+/** Whether the payload carries SSH credential materials (default off). */
+export function setSyncCredentials(enabled: boolean): void {
+  state.syncCredentials = enabled;
+  saveConfig({ ...loadConfig(), syncCredentials: enabled });
+  notify();
+}
+
 export function syncPasswordsEnabled(): boolean {
   return loadConfig().syncPasswords;
+}
+
+export function syncCredentialsEnabled(): boolean {
+  return loadConfig().syncCredentials;
 }
 
 // ---------------------------------------------------------------------------
@@ -666,7 +682,10 @@ async function runSync(opts: SyncOptions, seq: number): Promise<SyncResult> {
     hasRemoteFile: remoteFile !== null,
   });
 
-  const localPayload = await buildSyncPayload(loadConfig().syncPasswords);
+  const localPayload = await buildSyncPayload(
+    loadConfig().syncPasswords,
+    loadConfig().syncCredentials,
+  );
   const base = loadBase();
 
   const finish = (result: SyncResult): SyncResult => {
@@ -756,8 +775,13 @@ async function runSync(opts: SyncOptions, seq: number): Promise<SyncResult> {
     base === null &&
     localPayload.hosts.length === 0 &&
     localPayload.snippets.length === 0 &&
+    localPayload.keys.length === 0 &&
+    localPayload.identities.length === 0 &&
     !opts.confirmedEmptyVault &&
-    (remotePayload.hosts.length > 0 || remotePayload.snippets.length > 0)
+    (remotePayload.hosts.length > 0 ||
+      remotePayload.snippets.length > 0 ||
+      remotePayload.keys.length > 0 ||
+      remotePayload.identities.length > 0)
   ) {
     state.syncing = false;
     state.syncState = "IDLE";
@@ -820,7 +844,12 @@ async function runSync(opts: SyncOptions, seq: number): Promise<SyncResult> {
 }
 
 function hasLocalData(payload: SyncPayload): boolean {
-  return payload.hosts.length > 0 || payload.snippets.length > 0;
+  return (
+    payload.hosts.length > 0 ||
+    payload.snippets.length > 0 ||
+    payload.keys.length > 0 ||
+    payload.identities.length > 0
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -915,7 +944,10 @@ export async function forcePushLocal(baseVersion?: number): Promise<SyncResult> 
   try {
     const anchor = loadAnchor();
     const resolvedBaseVersion = baseVersion ?? blockedRemoteFile?.meta.version ?? anchor?.version ?? 0;
-    const payload = await buildSyncPayload(loadConfig().syncPasswords);
+    const payload = await buildSyncPayload(
+      loadConfig().syncPasswords,
+      loadConfig().syncCredentials,
+    );
     const result = await uploadPayload(payload, {
       overrideShrink: true,
       base: loadBase(),

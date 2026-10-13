@@ -7,7 +7,7 @@
  * drag in mapping work for little gain.
  */
 
-import type { HostSyncDto, SnippetDto } from "$lib/bindings";
+import type { HostSyncDto, SnippetDto, IdentitySyncDto, KeySyncDto } from "$lib/bindings";
 
 // ============================================================================
 // State machines
@@ -58,13 +58,26 @@ export type SyncedHost = HostSyncDto;
 /** A synced snippet — the same shape `snippets.toml` holds, keyed on `name`. */
 export type SyncedSnippet = SnippetDto;
 
-/** Decrypted sync payload. Phase 1 carries manual hosts + snippets only —
- *  settings were cut from scope (the TUI and GUI keep different models); a
- *  Phase 2 sync would add the field back with a whitelist. */
+/** A synced keychain key entry — fingerprint-keyed (`keyFp`), materials only
+ *  under the `syncCredentials` switch. */
+export type SyncedKey = KeySyncDto;
+
+/** A synced login identity — label-keyed; the password only under the switch. */
+export type SyncedIdentity = IdentitySyncDto;
+
+/** Decrypted sync payload. Manual hosts + snippets always travel; identity
+ *  metadata (keys + identities, fingerprint-keyed) travels so a synced host's
+ *  key pin resolves on a new device; secret materials (PEM / passphrases /
+ *  identity passwords) only under the `syncCredentials` switch. */
 export interface SyncPayload {
   /** Manual entries only — SSH-config imports are re-derived per device. */
   hosts: SyncedHost[];
   snippets: SyncedSnippet[];
+  /** Keychain entries, fingerprint-keyed; `pem`/`passphrase` absent unless
+   *  the credentials switch is on. */
+  keys: SyncedKey[];
+  /** Login identities, label-keyed; `password` absent unless the switch is on. */
+  identities: SyncedIdentity[];
   /** Stripped before fingerprinting. */
   syncedAt: number;
 }
@@ -85,7 +98,7 @@ export interface ProviderSyncAnchor {
   observedAt: number;
 }
 
-export type SyncEntityType = "hosts" | "snippets";
+export type SyncEntityType = "hosts" | "snippets" | "keys" | "identities";
 
 export type ShrinkFinding =
   | { suspicious: false }
@@ -189,6 +202,11 @@ export interface SyncConfig {
   autoSync: boolean;
   /** Whether the payload carries login passwords (default off; envelope-encrypted). */
   syncPasswords: boolean;
+  /** Whether the payload carries the SSH credential materials — key PEMs,
+   *  key passphrases, identity passwords (default off; envelope-encrypted).
+   *  Identity *metadata* travels regardless: it is non-sensitive and makes a
+   *  synced host's key pin resolve. */
+  syncCredentials: boolean;
   /** The discovered sync Gist id. */
   gistId: string | null;
   /** Where the GitHub token landed (keyring / encrypted file), set by Rust. */
@@ -206,6 +224,7 @@ export interface SyncConfig {
 export const DEFAULT_SYNC_CONFIG: SyncConfig = {
   autoSync: true,
   syncPasswords: false,
+  syncCredentials: false,
   gistId: null,
   tokenBackend: null,
   passwordBackend: null,
@@ -293,4 +312,7 @@ export const loadDeviceInfo = (): DeviceInfo => {
 
 /** Whether the payload carries any real entity data (empty-vault guard). */
 export const hasSyncPayloadEntityData = (payload: SyncPayload): boolean =>
-  payload.hosts.length > 0 || payload.snippets.length > 0;
+  payload.hosts.length > 0 ||
+  payload.snippets.length > 0 ||
+  payload.keys.length > 0 ||
+  payload.identities.length > 0;

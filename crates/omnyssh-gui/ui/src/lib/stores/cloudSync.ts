@@ -91,7 +91,7 @@ async function startupCheck(attempt: number): Promise<void> {
 /** The payload fingerprint of the current local data (used to consult the
  *  engine's skip hash before firing an automatic sync). */
 async function currentPayload(): Promise<SyncPayload> {
-  return buildSyncPayload(engine.syncPasswordsEnabled());
+  return buildSyncPayload(engine.syncPasswordsEnabled(), engine.syncCredentialsEnabled());
 }
 
 async function debouncedAutoSync(): Promise<void> {
@@ -170,6 +170,7 @@ export const syncActions = {
 
   setAutoSync: (enabled: boolean): void => engine.setAutoSync(enabled),
   setSyncPasswords: (enabled: boolean): void => engine.setSyncPasswords(enabled),
+  setSyncCredentials: (enabled: boolean): void => engine.setSyncCredentials(enabled),
 
   resolveConflictUseRemote: (cloudPassword: string): Promise<SyncResult> =>
     engine.resolveConflictUseRemote(cloudPassword, applyLocal),

@@ -31,6 +31,8 @@ const host = (name: string, password?: string | null): SyncedHost => ({
   localForwards: [],
   tunnelAutostart: false,
   forwardAgent: false,
+  keyFp: '',
+  identityLabel: '',
   ...(password === undefined ? {} : { password }),
 });
 
@@ -40,24 +42,33 @@ describe("buildSyncPayload", () => {
     listSnippetsMock.mockReset().mockResolvedValue([]);
   });
 
-  it("passes the syncPasswords switch to sync_export_hosts and assembles the payload", async () => {
-    invokeMock.mockResolvedValue([host("a")]);
+  it("passes both switches through and assembles the payload from the three exports", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "sync_export_hosts") return Promise.resolve([host("a")]);
+      if (cmd === "sync_export_identities")
+        return Promise.resolve([[{ keyFp: "fp", label: "k", publicKey: "p", createdAt: 0 }], []]);
+      return Promise.resolve(null);
+    });
     listSnippetsMock.mockResolvedValue([{ name: "s", command: "uptime", scope: "global" }]);
 
-    const p = await buildSyncPayload(true);
+    const p = await buildSyncPayload(true, false);
 
     expect(invokeMock).toHaveBeenCalledWith("sync_export_hosts", { includePasswords: true });
+    expect(invokeMock).toHaveBeenCalledWith("sync_export_identities", { includeCredentials: false });
     expect(p.hosts.map((h) => h.name)).toEqual(["a"]);
     expect(p.snippets.map((s) => s.name)).toEqual(["s"]);
+    expect(p.keys.map((k) => k.keyFp)).toEqual(["fp"]);
+    expect(p.identities).toEqual([]);
     expect(typeof p.syncedAt).toBe("number");
   });
 
-  it("with passwords off, export runs without secrets (the Rust side strips them)", async () => {
+  it("with both switches off, export runs without secrets (the Rust side strips them)", async () => {
     invokeMock.mockResolvedValue([host("a")]);
 
-    await buildSyncPayload(false);
+    await buildSyncPayload(false, false);
 
     expect(invokeMock).toHaveBeenCalledWith("sync_export_hosts", { includePasswords: false });
+    expect(invokeMock).toHaveBeenCalledWith("sync_export_identities", { includeCredentials: false });
   });
 });
 
@@ -72,6 +83,8 @@ describe("applySyncPayload", () => {
     const p: SyncPayload = {
       hosts: [host("a")],
       snippets: [{ name: "s", command: "uptime", scope: "global" }],
+      keys: [],
+      identities: [],
       syncedAt: 1,
     };
     const order: string[] = [];
@@ -90,7 +103,17 @@ describe("applySyncPayload", () => {
 
     await applySyncPayload(p);
 
-    expect(order).toEqual(["sync_apply_hosts", "sync_apply_snippets", "reload_hosts", "list_snippets"]);
+    expect(order).toEqual([
+      "sync_apply_identities",
+      "sync_apply_hosts",
+      "sync_apply_snippets",
+      "reload_hosts",
+      "list_snippets",
+    ]);
+    expect(invokeMock).toHaveBeenCalledWith("sync_apply_identities", {
+      keys: [],
+      identitiesPayload: [],
+    });
     expect(invokeMock).toHaveBeenCalledWith("sync_apply_hosts", { hosts: p.hosts });
     expect(invokeMock).toHaveBeenCalledWith("sync_apply_snippets", { snippets: p.snippets });
   });
@@ -101,7 +124,7 @@ describe("applySyncPayload", () => {
     );
 
     await expect(
-      applySyncPayload({ hosts: [host("a")], snippets: [], syncedAt: 1 }),
+      applySyncPayload({ hosts: [host("a")], snippets: [], keys: [], identities: [], syncedAt: 1 }),
     ).rejects.toThrow("boom");
     expect(invokeMock).not.toHaveBeenCalledWith("sync_apply_snippets", expect.anything());
     expect(reloadHostsMock).not.toHaveBeenCalled();
@@ -110,9 +133,15 @@ describe("applySyncPayload", () => {
 
 describe("payloadFingerprint", () => {
   it("ignores syncedAt and key order; distinguishes content", () => {
-    const a: SyncPayload = { hosts: [host("a")], snippets: [], syncedAt: 1 };
-    const b: SyncPayload = { hosts: [host("a")], snippets: [], syncedAt: 999 };
-    const c: SyncPayload = { hosts: [host("a", "secret")], snippets: [], syncedAt: 1 };
+    const a: SyncPayload = { hosts: [host("a")], snippets: [], keys: [], identities: [], syncedAt: 1 };
+    const b: SyncPayload = { hosts: [host("a")], snippets: [], keys: [], identities: [], syncedAt: 999 };
+    const c: SyncPayload = {
+      hosts: [host("a", "secret")],
+      snippets: [],
+      keys: [],
+      identities: [],
+      syncedAt: 1,
+    };
 
     expect(payloadFingerprint(a)).toBe(payloadFingerprint(b));
     expect(payloadFingerprint(a)).not.toBe(payloadFingerprint(c));

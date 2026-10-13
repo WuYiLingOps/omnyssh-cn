@@ -396,6 +396,33 @@
         </button>
       </div>
 
+      <!-- Sync credential materials: PEMs, key passphrases, identity
+           passwords. Metadata always syncs; these ride the payload only when
+           the user opts in (envelope-encrypted by the sync password). -->
+      <div class="mt-4 flex items-center justify-between gap-4 border-t border-default pt-4">
+        <div class="min-w-0">
+          <p class="text-sm">{$t('cloudSync.syncCredentials')}</p>
+          <p class="text-xs text-muted">{$t('cloudSync.syncCredentialsHint')}</p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={s.securityState === 'UNLOCKED' && s.syncCredentials}
+          aria-label={$t('cloudSync.syncCredentials')}
+          disabled={s.securityState !== 'UNLOCKED'}
+          onclick={() => syncActions.setSyncCredentials(!s.syncCredentials)}
+          class="relative h-6 w-11 shrink-0 rounded-full transition disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus {s.syncCredentials
+            ? 'bg-accent'
+            : 'bg-surface-inset'}"
+        >
+          <span
+            class="absolute top-0.5 h-5 w-5 rounded-full bg-surface shadow-soft transition-[left] {s.syncCredentials
+              ? 'left-[1.375rem]'
+              : 'left-0.5'}"
+          ></span>
+        </button>
+      </div>
+
       <!-- History -->
       <div class="mt-4 border-t border-default pt-4">
         <button
