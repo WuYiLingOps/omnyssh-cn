@@ -593,7 +593,9 @@
     "uploadTitle": "上传 {count} 个项目到远端目录：",
     "remoteDir": "远端目录",
     "remotePath": "远端路径",
-    "downloadHint": "下一步会弹出保存对话框；文件夹会以所选名称下载。"
+    "pickerPathPlaceholder": "筛选条目，或输入绝对路径…",
+    "pickerNoMatch": "没有匹配的条目。",
+    "downloadHint": "点击文件即保存到本地；点击文件夹进入浏览；输入绝对路径可直接下载。"
   },
   "credentials": {
     "title": "SSH 凭证",

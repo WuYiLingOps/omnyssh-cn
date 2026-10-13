@@ -32,16 +32,18 @@
     terminalProbeCwd,
     sftpUpload,
     sftpDownload,
+    sftpList,
     sftpCancel
   } from '$lib/ipc/commands';
   import { sftp, baseName, formatBytes, transferState } from '$lib/stores/sftp';
   import { ensureTermSftp, releaseTermSftp, termSftpDirs } from '$lib/stores/termSftp';
   import ContextMenu, { type ContextMenuItem } from '$lib/components/ContextMenu.svelte';
   import Modal from '$lib/components/Modal.svelte';
+  import RemotePicker from '$lib/components/RemotePicker.svelte';
   import { shouldFadeTop } from './terminalFade';
   import { chunkBytes, closesEndedTab, isCopyShortcut, layoutFallback } from './terminalInput';
   import { isMac } from '$lib/platform';
-  import type { TerminalBytes } from '$lib/bindings';
+  import type { FileEntryDto, TerminalBytes } from '$lib/bindings';
 
   let { session, active }: { session: Session; active: boolean } = $props();
 
@@ -141,23 +143,24 @@
   let menu = $state<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
   // 排队的传输动作：一次只派发一个（核心命令通道有界，避免溢出打乱 op-done 的 FIFO）。
   let outbox = $state<Array<{ transfer: boolean; run: () => void }>>([]);
-  // 上传确认弹窗（已选本地路径 + 远端目标目录）与下载弹窗（远端路径输入）。
+  // 上传确认弹窗（已选本地路径 + 远端目标目录）与下载弹窗（远端文件浏览选择器）。
   let uploadPick = $state<{ paths: string[] } | null>(null);
   let uploadDir = $state('/');
   let downloadAsk = $state(false);
-  let downloadRemote = $state('/');
   let termSftpId = $state<number | undefined>(undefined);
 
   const termSftpView = $derived(termSftpId != null ? $sftp.get(termSftpId) : undefined);
   const menuTransfer = $derived(termSftpView ? transferState(termSftpView) : undefined);
 
-  // 该主机当前正在浏览的远端目录：先看本标签自己的 SFTP 会话，再看任意同主机会话
-  // （如 SFTP 屏幕）。`remote.path` 仅在目录列表返回后非空——连接中或从未浏览时
-  // 为 ''，此时回退到上次传输的记忆目录。
+  // 其他同主机会话（如 SFTP 屏幕）当前正在浏览的远端目录。本标签自己的 SFTP
+  // 会话按 id 显式排除——那是历次右键传输弹窗留下的浏览位置，不代表用户此刻在
+  // 哪里；不排除的话它既污染弹窗预填值，又会在 probeShellCwd/openDownloadPicker
+  // 的前置判断里把 shell cwd 探测整个短路（弹窗从此停在旧目录）。
   const browsedRemoteDir = $derived.by(() => {
-    if (termSftpView?.remote.path) return termSftpView.remote.path;
-    for (const s of $sftp.values()) {
-      if (s.hostName === session.hostName && s.remote.path) return s.remote.path;
+    for (const [id, s] of $sftp) {
+      if (id !== termSftpId && s.hostName === session.hostName && s.remote.path) {
+        return s.remote.path;
+      }
     }
     return undefined;
   });
@@ -182,8 +185,10 @@
     return data.startsWith('/') ? data : undefined;
   }
 
-  /** 传输弹窗的默认远端目录：shell cwd 优先，其次正在浏览的目录，再是上次
-   *  传输记忆，最后根目录。探测结果随后由 `probeShellCwd` 异步补上。 */
+  /** 传输弹窗的回退远端目录：shell cwd（OSC 7）优先，其次其他同主机会话正在
+   *  浏览的目录，再是上次传输记忆，最后根目录。OSC 7 缺席时 shell cwd 由
+   *  `probeShellCwd` 异步补填（上传）或在 `openDownloadPicker` 内先行探测
+   *  （下载），不走这里。 */
   function defaultRemoteDir(): string {
     return (
       oscCwd ?? browsedRemoteDir ?? get(termSftpDirs).get(session.hostName) ?? '/'
@@ -192,16 +197,16 @@
 
   /** 打开弹窗时的基线值：探测返回后只有用户仍未改动时才覆盖，避免抢输入。 */
   let uploadBaseline = '';
-  let downloadBaseline = '';
 
-  /** 按需探测 shell cwd（无 OSC 7、未浏览 SFTP 时才有意义），静默失败。 */
+  /** 按需探测 shell cwd（无 OSC 7、未浏览 SFTP 时才有意义），静默失败。探测返回
+   *  时只有上传弹窗仍开着、且用户尚未改动输入框，才补填探测到的目录。下载弹窗
+   *  不走这里——它在 `openDownloadPicker` 里同步等探测结果后再列目录。 */
   async function probeShellCwd(): Promise<void> {
     if (oscCwd || browsedRemoteDir || termId == null || ended()) return;
     try {
       const cwd = await terminalProbeCwd(termId);
       if (!cwd) return;
       if (uploadPick && uploadDir === uploadBaseline) uploadDir = cwd;
-      if (downloadAsk && downloadRemote === downloadBaseline) downloadRemote = cwd;
     } catch {
       // 探测失败（非 Linux / 受限 /proc / 无 shell）：保持回退默认值。
     }
@@ -213,6 +218,12 @@
 
   function joinRemote(dir: string, name: string): string {
     return dir.endsWith('/') ? `${dir}${name}` : `${dir}/${name}`;
+  }
+
+  /** 本地目录 + 名称 → 本地路径；Windows 盘符路径用 `\` 连接（同 SftpView）。 */
+  function joinLocal(dir: string, name: string): string {
+    const sep = dir.includes('\\') && !dir.includes('/') ? '\\' : '/';
+    return dir.endsWith(sep) ? `${dir}${name}` : `${dir}${sep}${name}`;
   }
 
   /** `path` 去掉末段后的目录部分；根目录归一为 `/`。用于记住上次传输目录。 */
@@ -286,12 +297,14 @@
         void probeShellCwd();
         break;
       }
-      case 'download':
-        downloadRemote = defaultRemoteDir();
-        downloadBaseline = downloadRemote;
+      case 'download': {
+        // 初始目录在打开流程内决定：先探测 shell cwd（OSC 7 缺席时），探测有果
+        // 用探测值，无果才落到 defaultRemoteDir 的回退链。绝不先按回退值列表
+        // 再改道——探测与 SFTP 列表分属两条通道，竞态下旧回应会覆盖新目录。
         downloadAsk = true;
-        void probeShellCwd();
+        void openDownloadPicker();
         break;
+      }
       case 'openSftp':
         spawnSession('sftp', session.hostName);
         break;
@@ -340,28 +353,138 @@
     );
   }
 
-  /** 下载确认：远端路径 → 原生保存对话框（默认文件名取路径末段）→ 入队。 */
-  async function confirmDownload(): Promise<void> {
-    const remote = downloadRemote.trim();
-    if (!remote || remote === '/') return;
-    const local = await dialogSave({
-      title: String($t('terminal.menuDownload')),
-      defaultPath: baseName(remote) || 'download'
+  // 下载弹窗的浏览状态。初始目录在 openDownloadPicker 内决定：shell cwd 探测值
+  // 优先，无果才落到 defaultRemoteDir 的回退链——不能在组件初始化时缓存，也不能
+  // 先按回退值列表再改道（探测与列表分属两条通道，竞态下旧回应会覆盖新目录）。
+  let downloadStart = $state('/');
+  const downloadPane = $derived(downloadAsk ? termSftpView?.remote : undefined);
+
+  /** 列出下载选择器的某个目录：先占位 loading，结果经 `sftp-dir-listed` 落进 store。 */
+  function listDownloadDir(path: string): void {
+    const id = termSftpId;
+    if (id == null) return;
+    sftp.beginLoading(id, 'remote');
+    void sftpList(id, path).catch((err) => sftp.paneError(id, 'remote', errMsg(err)));
+  }
+
+  /** 打开下载选择器：起（或复用）本标签的 SFTP 会话，在连接期间并行探测 shell
+   *  cwd（OSC 7 缺席时），两者就绪后按「探测值 → 其他会话浏览位置 → 上次传输
+   *  记忆 → /」定出初始目录并一次列表。先探测后列表，杜绝双列表竞态（探测走
+   *  exec 通道、列表走 SFTP 通道，若先按回退值列表再改道，旧回应可能后到覆盖
+   *  新目录）。探测无超时包装也不会挂死弹窗：核心侧自带 CWD_PROBE_TIMEOUT，
+   *  失败即 resolve None。 */
+  async function openDownloadPicker(): Promise<void> {
+    let probed: string | undefined;
+    // 探测跳过条件不含本标签自己的 pane（termSftpView）——那是历次下载弹窗留下
+    // 的浏览位置，不是用户在 SFTP 屏主动浏览的目录，不能当成“已知位置”。
+    const knownDir = oscCwd ?? browsedRemoteDir;
+    const [id] = await Promise.all([
+      sftpId(),
+      knownDir || termId == null || ended()
+        ? Promise.resolve()
+        : terminalProbeCwd(termId)
+            .then((cwd) => {
+              probed = cwd ?? undefined;
+            })
+            .catch(() => {})
+    ]);
+    if (id == null || !downloadAsk) return;
+    downloadStart = probed ?? knownDir ?? get(termSftpDirs).get(session.hostName) ?? '/';
+    listDownloadDir(downloadStart);
+  }
+
+  /** 一次性列目录：订阅 store 等该会话的 `sftp-dir-listed` 落地，拿到条目即退订。
+   *  手动路径解析类型用——不干扰选择器正浏览的 pane，也不动传输队列。超时或
+   *  命令被拒（会话已关等）都按失败处理。 */
+  function listRemoteOnce(id: number, path: string): Promise<FileEntryDto[]> {
+    return new Promise((resolve, reject) => {
+      if (ended()) {
+        reject(new Error('terminal sftp released'));
+        return;
+      }
+      let settled = false;
+      const timeout = setTimeout(() => {
+        unsub();
+        reject(new Error('listing timed out'));
+      }, 15_000);
+      const unsub = sftp.subscribe((m) => {
+        const pane = m.get(id)?.remote;
+        // `applyListing` 落地时 path 匹配且 loading 已清；空目录也是合法结果。
+        if (!settled && pane && pane.path === path && !pane.loading) {
+          settled = true;
+          clearTimeout(timeout);
+          unsub();
+          resolve(pane.entries);
+        }
+      });
+      void sftpList(id, path).catch((err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        unsub();
+        reject(err);
+      });
     });
-    if (!local) return;
+  }
+
+  /** 下载确认：核心要求 `local` 以要创建的名称结尾（文件夹亦然），所以统一先定
+   *  本地目录再拼名。文件弹原生保存对话框（默认名 = 远端名，可改名/换目录）；
+   *  文件夹没有对应对话框，落到上次传输记忆的本地目录。取消保存 = 整个不下载。 */
+  async function confirmDownload(entry: FileEntryDto): Promise<void> {
+    const remote = entry.path;
+    const name = entry.name;
+    if (!remote || remote === '/' || !name) return;
+    let local: string;
+    if (entry.isDir) {
+      const dir = await dialogOpen({ directory: true, title: String($t('terminal.menuDownload')) });
+      if (typeof dir !== 'string') return;
+      local = joinLocal(dir, name);
+    } else {
+      const saved = await dialogSave({
+        title: String($t('terminal.menuDownload')),
+        defaultPath: name
+      });
+      if (!saved) return;
+      local = saved;
+    }
+    downloadAsk = false;
     const id = await sftpId();
     if (id == null) return;
     termSftpDirs.remember(session.hostName, dirOf(remote));
-    downloadAsk = false;
     enqueue(
       [
         () => {
-          sftp.pushOp(id, { kind: 'download', name: baseName(remote), refresh: 'remote' });
+          sftp.pushOp(id, { kind: 'download', name, refresh: 'remote' });
           void sftpDownload(id, local, remote).catch(onDispatchError(id));
         }
       ],
       true
     );
+  }
+
+  /** 手动输入的绝对路径下载：核心没有 stat 命令，改请求列出其父目录，从返回
+   *  条目里拿到类型后与点选路径汇合（`confirmDownload`）。路径不存在或无权限
+   *  时经通知条报错，弹窗已关、浏览状态不动。 */
+  async function downloadManual(path: string): Promise<void> {
+    const remote = path.trim();
+    if (!remote || remote === '/' || remote.endsWith('/')) return;
+    downloadAsk = false;
+    const id = await sftpId();
+    if (id == null) return;
+    termSftpDirs.remember(session.hostName, dirOf(remote));
+    const name = baseName(remote);
+    if (!name) return;
+    try {
+      const entries = await listRemoteOnce(id, dirOf(remote));
+      const entry = entries.find((e) => e.name === name);
+      if (entry) {
+        await confirmDownload(entry);
+        return;
+      }
+      lastError.set($t('terminal.pickerNoMatch'));
+    } catch (err) {
+      lastError.set(errMsg(err));
+    }
   }
 
   // 派发泵：上一个操作 ack（pending 清空）后才放行下一个，核心命令通道永不溢出。
@@ -420,7 +543,8 @@
       // every prompt, making transfer-dialog defaults exact. Unhandled by us on
       // purpose (false return) so xterm's own handlers still see the sequence.
       term.parser.registerOscHandler(7, (data) => {
-        oscCwd = osc7Path(data);
+        const path = osc7Path(data);
+        if (path) oscCwd = path;
         return false;
       });
 
@@ -700,45 +824,13 @@
 
 {#if downloadAsk}
   <Modal label={$t('terminal.menuDownload')} onClose={() => (downloadAsk = false)}>
-    <form
-      onsubmit={(e) => {
-        e.preventDefault();
-        void confirmDownload();
-      }}
-    >
-      <header class="border-b border-default px-5 py-3.5">
-        <h2 class="text-sm font-semibold">{$t('terminal.menuDownload')}</h2>
-      </header>
-      <div class="px-5 py-4">
-        <!-- svelte-ignore a11y_autofocus -->
-        <input
-          autofocus
-          bind:value={downloadRemote}
-          class="w-full rounded-lg bg-surface-inset px-3 py-2 font-mono text-sm text-fg outline-none
-            focus-visible:ring-2 focus-visible:ring-focus placeholder:text-faint"
-          placeholder={$t('terminal.remotePath')}
-          aria-label={$t('terminal.remotePath')}
-          spellcheck="false"
-        />
-        <p class="mt-2 text-xs text-faint">{$t('terminal.downloadHint')}</p>
-      </div>
-      <footer class="flex justify-end gap-2 border-t border-default px-5 py-3">
-        <button
-          type="button"
-          class="rounded-full px-4 py-2 text-sm text-muted transition hover:bg-surface-inset hover:text-fg"
-          onclick={() => (downloadAsk = false)}
-        >
-          {$t('sftp.cancel')}
-        </button>
-        <button
-          type="submit"
-          class="rounded-full bg-accent px-5 py-2 text-sm font-medium text-accent-fg transition hover:opacity-90 disabled:opacity-50"
-          disabled={!downloadRemote.trim() || downloadRemote.trim() === '/'}
-        >
-          {$t('sftp.download')}
-        </button>
-      </footer>
-    </form>
+    <RemotePicker
+      pane={downloadPane}
+      onBrowse={listDownloadDir}
+      onManual={(path) => void downloadManual(path)}
+      onClose={() => (downloadAsk = false)}
+      onPick={(entry) => void confirmDownload(entry)}
+    />
   </Modal>
 {/if}
 

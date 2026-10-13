@@ -593,7 +593,9 @@
     "uploadTitle": "Upload {count, plural, one {# item} other {# items}} to remote directory:",
     "remoteDir": "Remote directory",
     "remotePath": "Remote path",
-    "downloadHint": "A save dialog opens next; folders download under the chosen name."
+    "pickerPathPlaceholder": "Filter, or type an absolute path…",
+    "pickerNoMatch": "No entries match.",
+    "downloadHint": "Click a file to save it locally; click a folder to enter; an absolute path downloads it directly."
   },
   "credentials": {
     "title": "SSH Credentials",
