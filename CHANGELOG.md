@@ -19,6 +19,7 @@ Versions follow [Semantic Versioning](https://semver.org/).
 - **Toasts in the desktop app.** Small confirmations and failures (cloud sync connect, copy, save) surface as toasts in a corner instead of console-only messages.
 
 ### Bug Fixes
+- **Cloud sync's Connect GitHub works in the released installers.** The release workflow never passed `VITE_SYNC_GITHUB_CLIENT_ID` to the GUI build, so Vite baked an empty client id into every installer and connecting reported "missing the GitHub OAuth App client_id" no matter what. The build step now takes the id from the repository secret, like the local `.env` does.
 - **A synced host that was deleted elsewhere no longer leaves its password behind.** Applying a cloud sync payload now also removes the stored login passwords of hosts that the merge dropped, mirroring the local delete path.
 - **The credentials dialogs keep their content usable on small windows.** The key-import, key-edit and identity dialogs scroll their body between a fixed header and footer instead of overflowing.
 
